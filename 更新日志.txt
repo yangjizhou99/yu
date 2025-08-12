@@ -1,5 +1,64 @@
 # 更新日志
 
+## [2025-08-13 03:56:15] 多种鱼形选择功能 (v3.3)
+
+### 新增功能
+1. **四种鱼形选择**：
+   - 流线型(默认)：尖头、饱腹、细尾柄
+   - 神仙鱼：高背三角鳍，腹部鼓、尾柄细
+   - 旗鱼/剑鱼：细长体 + 长吻"剑"，腹部较平直
+   - 长尾型：斗鱼/金鱼风，圆润身 + 尾柄短
+
+2. **自定义面板升级**：
+   - 新增鱼形选择按钮组
+   - 切换鱼形时自动清空当前绘制
+   - 绘制区域轮廓实时更新为所选鱼形
+
+3. **存档兼容**：
+   - 为旧存档鱼自动设置默认形状(流线型)
+   - 新增shape字段保存鱼形信息
+
+### 实现方法
+- 新增FishShape类型定义四种鱼形
+- 添加beginFishBodyPath_byShape和beginFishBodyPathAbs_byShape分发函数
+- 为每种鱼形实现独立的路径绘制函数
+- 修改FishDesigner组件：
+  - 添加形状选择状态
+  - 更新轮廓绘制逻辑
+  - 修改onCreate接口添加shape参数
+- 更新渲染循环使用f.shape选择路径函数
+
+### 验证方式
+1. 打开自定义面板，测试四种鱼形切换
+2. 验证绘制区域轮廓与所选鱼形匹配
+3. 创建不同形状的鱼，观察游动效果
+4. 刷新页面验证鱼形保存正确
+5. 加载旧存档验证兼容性
+
+### 技术细节
+- 类型定义：
+  ```ts
+  type FishShape = "streamlined" | "angelfish" | "swordfish" | "longtail";
+  interface Fish {
+    // ...
+    shape?: FishShape;
+  }
+  ```
+- 路径分发函数：
+  ```ts
+  function beginFishBodyPath_byShape(ctx: CanvasRenderingContext2D, shape: FishShape, L: number, H: number) {
+    if (shape === "angelfish") return beginFishBodyPath_angelfish(ctx, L, H);
+    // ...其他形状判断
+    return beginFishBodyPath_streamlined(ctx, L, H);
+  }
+  ```
+- 神仙鱼路径控制点示例：
+  ```ts
+  ctx.moveTo(+L*0.45, 0);
+  ctx.bezierCurveTo(+L*0.30, -H*0.05, +L*0.05, -H*0.65, -L*0.15, -H*0.50);
+  // ...其他控制点
+  ```
+
 ## [2025-08-13 03:37:56] 鱼体轮廓升级 (v3.2)
 
 ### 新增功能

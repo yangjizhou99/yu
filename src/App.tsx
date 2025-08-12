@@ -51,10 +51,14 @@ function pickFoodVariant() { const r = Math.random(); let acc = 0; for (const v 
 
 // ====== 类型 ======
 interface Food { id: number; x: number; y: number; r: number; kind: FoodKind; growPct: number; }
+// 新增：鱼形类型
+type FishShape = "streamlined" | "angelfish" | "swordfish" | "longtail";
+
 interface Fish {
   id: number; x: number; y: number; vx: number; vy: number; speed: number;
   sizeScale: number; color: string; vision: number; targetFoodId: number|null; wanderT: number;
   ownerName?: string; petName?: string; textureDataUrl?: string;
+  shape?: FishShape; // 新增形状字段
 }
 type TexCache = Map<number, HTMLImageElement>;
 type Camera = { x: number; y: number; scale: number };
@@ -79,23 +83,91 @@ function drawStar(ctx: CanvasRenderingContext2D, spikes:number, outerR:number, i
   ctx.closePath(); ctx.rotate(Math.PI/2);
 }
 
-// —— 鱼体路径（局部坐标，中心(0,0)，长度L，整体高度H；不包含尾巴） ——
-function beginFishBodyPath(ctx: CanvasRenderingContext2D, L: number, H: number) {
-  // 流线型轮廓：尖头(右) → 背部 → 尾柄 → 腹部 → 回到尖头
-  ctx.moveTo( +L * 0.50, 0);
-  ctx.bezierCurveTo( +L * 0.42, -H * 0.10, +L * 0.20, -H * 0.42, -L * 0.30, -H * 0.24);
-  ctx.bezierCurveTo( -L * 0.46, -H * 0.20, -L * 0.46,  +H * 0.20, -L * 0.30,  +H * 0.24);
-  ctx.bezierCurveTo( +L * 0.20,  +H * 0.42, +L * 0.42,  +H * 0.10, +L * 0.50, 0);
+// —— 通用：按形状生成鱼体路径（局部坐标，中心(0,0)，长度 L，高度 H；不含尾鳍） ——
+function beginFishBodyPath_byShape(ctx: CanvasRenderingContext2D, shape: FishShape, L: number, H: number) {
+  if (shape === "angelfish") return beginFishBodyPath_angelfish(ctx, L, H);
+  if (shape === "swordfish")  return beginFishBodyPath_swordfish(ctx, L, H);
+  if (shape === "longtail")   return beginFishBodyPath_longtail(ctx, L, H);
+  return beginFishBodyPath_streamlined(ctx, L, H); // 默认
 }
 
-// —— 绝对坐标版：用于面板（无需translate/rotate） ——
-function drawFishBodyPathAbs(
-  ctx: CanvasRenderingContext2D, cx: number, cy: number, L: number, H: number
-) {
-  ctx.moveTo(cx + L * 0.50, cy + 0);
-  ctx.bezierCurveTo(cx + L * 0.42, cy - H * 0.10, cx + L * 0.20, cy - H * 0.42, cx - L * 0.30, cy - H * 0.24);
-  ctx.bezierCurveTo(cx - L * 0.46, cy - H * 0.20, cx - L * 0.46, cy + H * 0.20, cx - L * 0.30, cy + H * 0.24);
-  ctx.bezierCurveTo(cx + L * 0.20, cy + H * 0.42, cx + L * 0.42, cy + H * 0.10, cx + L * 0.50, cy + 0);
+// —— 绝对坐标版：给面板用（无需 translate/rotate）
+function beginFishBodyPathAbs_byShape(ctx: CanvasRenderingContext2D, shape: FishShape, cx: number, cy: number, L: number, H: number) {
+  if (shape === "angelfish") return beginFishBodyPathAbs_angelfish(ctx, cx, cy, L, H);
+  if (shape === "swordfish")  return beginFishBodyPathAbs_swordfish(ctx, cx, cy, L, H);
+  if (shape === "longtail")   return beginFishBodyPathAbs_longtail(ctx, cx, cy, L, H);
+  return beginFishBodyPathAbs_streamlined(ctx, cx, cy, L, H);
+}
+
+/** —— 1) 流线型（现有基础款，略尖头、饱腹、细尾柄） —— */
+function beginFishBodyPath_streamlined(ctx: CanvasRenderingContext2D, L: number, H: number) {
+  ctx.moveTo(+L*0.50, 0);
+  ctx.bezierCurveTo(+L*0.42, -H*0.10, +L*0.20, -H*0.42, -L*0.30, -H*0.24);
+  ctx.bezierCurveTo(-L*0.46, -H*0.18, -L*0.46, +H*0.18, -L*0.30, +H*0.24);
+  ctx.bezierCurveTo(+L*0.20, +H*0.42, +L*0.42, +H*0.10, +L*0.50, 0);
+}
+function beginFishBodyPathAbs_streamlined(ctx: CanvasRenderingContext2D, cx: number, cy: number, L: number, H: number) {
+  ctx.moveTo(cx+L*0.50, cy+0);
+  ctx.bezierCurveTo(cx+L*0.42, cy-H*0.10, cx+L*0.20, cy-H*0.42, cx-L*0.30, cy-H*0.24);
+  ctx.bezierCurveTo(cx-L*0.46, cy-H*0.18, cx-L*0.46, cy+H*0.18, cx-L*0.30, cy+H*0.24);
+  ctx.bezierCurveTo(cx+L*0.20, cy+H*0.42, cx+L*0.42, cy+H*0.10, cx+L*0.50, cy+0);
+}
+
+/** —— 2) 神仙鱼（高背三角鳍，腹部鼓、尾柄细） —— */
+function beginFishBodyPath_angelfish(ctx: CanvasRenderingContext2D, L: number, H: number) {
+  ctx.moveTo(+L*0.45, 0);
+  // 头部略尖 + 高背三角鳍（上方）
+  ctx.bezierCurveTo(+L*0.30, -H*0.05, +L*0.05, -H*0.65, -L*0.15, -H*0.50);
+  // 背后下滑 → 细尾柄
+  ctx.bezierCurveTo(-L*0.35, -H*0.35, -L*0.40, -H*0.10, -L*0.42, -H*0.04);
+  // 腹部鼓起 + 下方三角鳍
+  ctx.bezierCurveTo(-L*0.20, +H*0.55, +L*0.10, +H*0.65, +L*0.35, +H*0.10);
+  // 回到尖头
+  ctx.bezierCurveTo(+L*0.42, +H*0.02, +L*0.44, +H*0.01, +L*0.45, 0);
+}
+function beginFishBodyPathAbs_angelfish(ctx: CanvasRenderingContext2D, cx:number, cy:number, L:number, H:number) {
+  ctx.moveTo(cx+L*0.45, cy+0);
+  ctx.bezierCurveTo(cx+L*0.30, cy-H*0.05, cx+L*0.05, cy-H*0.65, cx-L*0.15, cy-H*0.50);
+  ctx.bezierCurveTo(cx-L*0.35, cy-H*0.35, cx-L*0.40, cy-H*0.10, cx-L*0.42, cy-H*0.04);
+  ctx.bezierCurveTo(cx-L*0.20, cy+H*0.55, cx+L*0.10, cy+H*0.65, cx+L*0.35, cy+H*0.10);
+  ctx.bezierCurveTo(cx+L*0.42, cy+H*0.02, cx+L*0.44, cy+H*0.01, cx+L*0.45, cy+0);
+}
+
+/** —— 3) 旗鱼/剑鱼（细长体 + 长吻"剑"，腹部较平直） —— */
+function beginFishBodyPath_swordfish(ctx: CanvasRenderingContext2D, L:number, H:number) {
+  // 前端长吻（略超出 L*0.55）
+  ctx.moveTo(+L*0.60, -H*0.02);
+  ctx.bezierCurveTo(+L*0.58, -H*0.04, +L*0.54, -H*0.06, +L*0.46, -H*0.08);
+  // 上缘：平直向后
+  ctx.bezierCurveTo(+L*0.10, -H*0.12, -L*0.10, -H*0.10, -L*0.40, -H*0.05);
+  // 下缘：微鼓 → 尾柄
+  ctx.bezierCurveTo(-L*0.20, +H*0.06, +L*0.18, +H*0.08, +L*0.46, +H*0.04);
+  // 回到吻部
+  ctx.bezierCurveTo(+L*0.54, +H*0.02, +L*0.58, 0, +L*0.60, -H*0.02);
+}
+function beginFishBodyPathAbs_swordfish(ctx:CanvasRenderingContext2D, cx:number, cy:number, L:number, H:number){
+  ctx.moveTo(cx+L*0.60, cy-H*0.02);
+  ctx.bezierCurveTo(cx+L*0.58, cy-H*0.04, cx+L*0.54, cy-H*0.06, cx+L*0.46, cy-H*0.08);
+  ctx.bezierCurveTo(cx+L*0.10, cy-H*0.12, cx-L*0.10, cy-H*0.10, cx-L*0.40, cy-H*0.05);
+  ctx.bezierCurveTo(cx-L*0.20, cy+H*0.06, cx+L*0.18, cy+H*0.08, cx+L*0.46, cy+H*0.04);
+  ctx.bezierCurveTo(cx+L*0.54, cy+H*0.02, cx+L*0.58, cy+0, cx+L*0.60, cy-H*0.02);
+}
+
+/** —— 4) 长尾型（斗鱼/金鱼风：圆润身 + 尾柄短，尾鳍很大） —— */
+function beginFishBodyPath_longtail(ctx: CanvasRenderingContext2D, L:number, H:number) {
+  ctx.moveTo(+L*0.45, 0);
+  // 圆润背部
+  ctx.bezierCurveTo(+L*0.30, -H*0.12, +L*0.05, -H*0.40, -L*0.18, -H*0.25);
+  // 肚子丰满 → 短尾柄
+  ctx.bezierCurveTo(-L*0.35, +H*0.10, -L*0.28, +H*0.30, -L*0.18, +H*0.25);
+  // 回到尖头
+  ctx.bezierCurveTo(+L*0.05, +H*0.40, +L*0.30, +H*0.12, +L*0.45, 0);
+}
+function beginFishBodyPathAbs_longtail(ctx:CanvasRenderingContext2D, cx:number, cy:number, L:number, H:number){
+  ctx.moveTo(cx+L*0.45, cy+0);
+  ctx.bezierCurveTo(cx+L*0.30, cy-H*0.12, cx+L*0.05, cy-H*0.40, cx-L*0.18, cy-H*0.25);
+  ctx.bezierCurveTo(cx-L*0.35, cy+H*0.10, cx-L*0.28, cy+H*0.30, cx-L*0.18, cy+H*0.25);
+  ctx.bezierCurveTo(cx+L*0.05, cy+H*0.40, cx+L*0.30, cy+H*0.12, cx+L*0.45, cy+0);
 }
 
 // —— 海洋背景：深海渐变 + 光斑 + 沙地 —— //
@@ -217,7 +289,10 @@ export default function App(){
     if(data){
       fishRef.current=data.fish??[]; foodRef.current=data.food??[]; nextIdRef.current=Math.max(1,data.nextId??1);
       setFishCount(fishRef.current.length); setFoodCount(foodRef.current.length);
-      for(const f of fishRef.current){ if(f.textureDataUrl){ const img=new Image(); img.src=f.textureDataUrl; texCacheRef.current.set(f.id,img);} }
+      for(const f of fishRef.current){ 
+        if(f.textureDataUrl){ const img=new Image(); img.src=f.textureDataUrl; texCacheRef.current.set(f.id,img); }
+        if(!f.shape) f.shape = "streamlined"; // 为旧存档设置默认形状
+      }
     }
   },[]);
 
@@ -368,11 +443,11 @@ export default function App(){
         if(!f.textureDataUrl || !texCacheRef.current.get(f.id)){
           const grdBody=ctx.createLinearGradient(0,-bodyH,0,bodyH); grdBody.addColorStop(0,"rgba(255,255,255,0.9)"); grdBody.addColorStop(1,f.color);
           ctx.fillStyle=grdBody; ctx.beginPath();
-          beginFishBodyPath(ctx, bodyLen, bodyH);   // ✅ 用曲线轮廓
+          beginFishBodyPath_byShape(ctx, f.shape ?? "streamlined", bodyLen, bodyH);   // ✅ 用曲线轮廓
           ctx.fill();
         }else{
           const img=texCacheRef.current.get(f.id)!; ctx.save(); ctx.beginPath();
-          beginFishBodyPath(ctx, bodyLen, bodyH);   // ✅ 用曲线轮廓
+          beginFishBodyPath_byShape(ctx, f.shape ?? "streamlined", bodyLen, bodyH);   // ✅ 用曲线轮廓
           ctx.clip();
           // 将纹理等比铺到"身体外接矩形"，避免变形
           const targetW = bodyLen * 0.98;
@@ -495,9 +570,9 @@ export default function App(){
 }
 
 // —— 绘制面板（受限椭圆） ——
-function FishDesigner({ onCancel, onCreate }:{
-  onCancel: ()=>void;
-  onCreate: (ownerName:string, petName:string, dataUrl:string)=>void;
+function FishDesigner({ onCancel, onCreate }: {
+  onCancel: () => void;
+  onCreate: (ownerName: string, petName: string, dataUrl: string, shape: FishShape) => void;
 }){
   const drawRef = useRef<HTMLCanvasElement|null>(null);
   const [brushColor, setBrushColor] = useState("#ff6b6b");
@@ -505,6 +580,7 @@ function FishDesigner({ onCancel, onCreate }:{
   const [isEraser, setIsEraser] = useState(false);
   const [ownerName, setOwnerName] = useState("");
   const [petName, setPetName] = useState("");
+  const [shape, setShape] = useState<FishShape>("streamlined");
 
   const CSS_W=360, CSS_H=200;
   const fishFrame = { cx: CSS_W*0.5, cy: CSS_H*0.5, L: CSS_W*0.68, H: CSS_H*0.60 };
@@ -514,10 +590,17 @@ function FishDesigner({ onCancel, onCreate }:{
     cvs.style.width=`${CSS_W}px`; cvs.style.height=`${CSS_H}px`;
     const ctx=cvs.getContext("2d")!; ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.fillStyle="#f8fafc"; ctx.fillRect(0,0,CSS_W,CSS_H);
-    ctx.save(); ctx.strokeStyle="rgba(2,132,199,0.9)"; ctx.lineWidth=2; ctx.setLineDash([6,6]);
-    ctx.beginPath();
-    drawFishBodyPathAbs(ctx, fishFrame.cx, fishFrame.cy, fishFrame.L, fishFrame.H); // ✅ 鱼形路径
-    ctx.stroke(); ctx.restore();
+    function drawFrameOutline() {
+      ctx.save(); 
+      ctx.strokeStyle="rgba(2,132,199,0.9)"; 
+      ctx.lineWidth=2; 
+      ctx.setLineDash([6,6]);
+      ctx.beginPath();
+      beginFishBodyPathAbs_byShape(ctx, shape, fishFrame.cx, fishFrame.cy, fishFrame.L, fishFrame.H);
+      ctx.stroke(); 
+      ctx.restore();
+    }
+    drawFrameOutline();
     ctx.fillStyle="rgba(0,0,0,0.45)"; ctx.font="12px system-ui, sans-serif"; ctx.textAlign="center";
     ctx.fillText("只允许在鱼体轮廓内绘制（超出无效）", CSS_W/2, 20);
   },[]);
@@ -526,12 +609,25 @@ function FishDesigner({ onCancel, onCreate }:{
   const lastRef = useRef<{x:number;y:number}|null>(null);
   function clipToFish(ctx:CanvasRenderingContext2D) {
     ctx.beginPath();
-    drawFishBodyPathAbs(ctx, fishFrame.cx, fishFrame.cy, fishFrame.L, fishFrame.H);
+    beginFishBodyPathAbs_byShape(ctx, shape, fishFrame.cx, fishFrame.cy, fishFrame.L, fishFrame.H);
     ctx.clip();
   }
   function getPos(e:React.PointerEvent<HTMLCanvasElement>){ const r=(e.target as HTMLCanvasElement).getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
   function onPointerDown(e:React.PointerEvent<HTMLCanvasElement>){ (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId); drawingRef.current=true; lastRef.current=getPos(e); }
   function onPointerUp(e:React.PointerEvent<HTMLCanvasElement>){ drawingRef.current=false; lastRef.current=null; (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId); }
+  function drawFrameOutline() {
+    const cvs = drawRef.current!;
+    const ctx = cvs.getContext("2d")!;
+    ctx.save();
+    ctx.strokeStyle = "rgba(2,132,199,0.9)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    beginFishBodyPathAbs_byShape(ctx, shape, fishFrame.cx, fishFrame.cy, fishFrame.L, fishFrame.H);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function onPointerMove(e:React.PointerEvent<HTMLCanvasElement>){
     if(!drawingRef.current) return; const cvs=drawRef.current!, ctx=cvs.getContext("2d")!;
     const cur=getPos(e); const last=lastRef.current??cur;
@@ -543,7 +639,7 @@ function FishDesigner({ onCancel, onCreate }:{
   }
   function clearDrawing(){ const cvs=drawRef.current!, ctx=cvs.getContext("2d")!; ctx.save(); clipToFish(ctx); ctx.clearRect(0,0,CSS_W,CSS_H); ctx.restore(); }
   function handleCreate(){ if(!ownerName.trim()||!petName.trim()){ alert("请填写 用户名字 和 宠物鱼名字"); return; }
-    const dataUrl=drawRef.current!.toDataURL("image/png"); onCreate(ownerName.trim(), petName.trim(), dataUrl); }
+    const dataUrl=drawRef.current!.toDataURL("image/png"); onCreate(ownerName.trim(), petName.trim(), dataUrl, shape); }
 
   const COLORS=["#ff6b6b","#f59e0b","#22c55e","#3b82f6","#8b5cf6","#222222"];
 
@@ -563,7 +659,27 @@ function FishDesigner({ onCancel, onCreate }:{
               style={{ width: 360, height: 200 }}
               onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}
             />
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-sm text-slate-600 mr-1">鱼形：</span>
+              {[
+                ["streamlined","流线型"], ["angelfish","神仙鱼"], ["swordfish","旗鱼"], ["longtail","长尾型"]
+              ].map(([key,label]) => (
+                <button
+                  key={key}
+                  onClick={() => { 
+                    setShape(key as FishShape); 
+                    const ctx = drawRef.current!.getContext("2d")!;
+                    ctx.fillStyle = "#f8fafc"; 
+                    ctx.fillRect(0, 0, CSS_W, CSS_H);
+                    drawFrameOutline();
+                    ctx.fillStyle = "rgba(0,0,0,0.45)"; 
+                    ctx.font = "12px system-ui, sans-serif"; 
+                    ctx.textAlign = "center";
+                    ctx.fillText("只允许在鱼体轮廓内绘制（超出无效）", CSS_W/2, 20);
+                  }}
+                  className={`px-2 py-1 rounded-md border ${shape===key ? "bg-sky-600 text-white" : "bg-white"}`}
+                >{label}</button>
+              ))}
               {COLORS.map(c=>(
                 <button key={c} onClick={()=>{setBrushColor(c); setIsEraser(false);}}
                   className="w-6 h-6 rounded-full border border-black/10" style={{background:c}} title={c} />
