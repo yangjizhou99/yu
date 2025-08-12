@@ -617,6 +617,7 @@ function FishDesigner({ onCancel, onCreate }: {
   onCreate: (ownerName: string, petName: string, dataUrl: string, shape: FishShape) => void;
 }){
   const drawRef = useRef<HTMLCanvasElement|null>(null);
+  const frameRef = useRef<HTMLCanvasElement|null>(null);
   const [brushColor, setBrushColor] = useState("#ff6b6b");
   const [brushSize, setBrushSize] = useState(8);
   const [isEraser, setIsEraser] = useState(false);
@@ -629,9 +630,39 @@ function FishDesigner({ onCancel, onCreate }: {
   const CSS_W=360, CSS_H=200;
   const fishFrame = { cx: CSS_W*0.5, cy: CSS_H*0.5, L: CSS_W*0.68, H: CSS_H*0.60 };
 
-  function remaskExistingDrawingToShape() {
-    const cvs = drawRef.current!;
+  function setupHiDPICanvas(cvs: HTMLCanvasElement, cssW: number, cssH: number) {
+    const dpr = window.devicePixelRatio || 1;
+    cvs.width = Math.floor(cssW * dpr);
+    cvs.height = Math.floor(cssH * dpr);
+    cvs.style.width = cssW + "px";
+    cvs.style.height = cssH + "px";
     const ctx = cvs.getContext("2d")!;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return ctx;
+  }
+
+  function renderFrame(s?: FishShape) {
+    const cvs = frameRef.current!, ctx = cvs.getContext("2d")!;
+    ctx.clearRect(0,0,CSS_W,CSS_H);
+    ctx.save();
+    ctx.strokeStyle = "rgba(2,132,199,0.9)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6,6]);
+    ctx.beginPath();
+    beginFishBodyPathAbs_byShape(ctx, s ?? shapeRef.current, fishFrame.cx, fishFrame.cy, fishFrame.L, fishFrame.H);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("只允许在鱼体轮廓内绘制（超出无效）", CSS_W/2, 18);
+    ctx.restore();
+  }
+
+  function remaskExistingDrawingToShape() {
+    const cvs = drawRef.current!, ctx = cvs.getContext("2d")!;
     ctx.save();
     ctx.globalCompositeOperation = "destination-in";
     ctx.beginPath();
@@ -641,24 +672,20 @@ function FishDesigner({ onCancel, onCreate }: {
     ctx.restore();
   }
 
-  useEffect(()=>{ const cvs=drawRef.current!, dpr=window.devicePixelRatio||1;
-    cvs.width=Math.floor(CSS_W*dpr); cvs.height=Math.floor(CSS_H*dpr);
-    cvs.style.width=`${CSS_W}px`; cvs.style.height=`${CSS_H}px`;
-    const ctx=cvs.getContext("2d")!; ctx.setTransform(dpr,0,0,dpr,0,0);
-    ctx.fillStyle="#f8fafc"; ctx.fillRect(0,0,CSS_W,CSS_H);
-    function drawFrameOutline() {
-      ctx.save(); 
-      ctx.strokeStyle="rgba(2,132,199,0.9)"; 
-      ctx.lineWidth=2; 
-      ctx.setLineDash([6,6]);
-      ctx.beginPath();
-      beginFishBodyPathAbs_byShape(ctx, shape, fishFrame.cx, fishFrame.cy, fishFrame.L, fishFrame.H);
-      ctx.stroke(); 
-      ctx.restore();
-    }
-    drawFrameOutline();
-    ctx.fillStyle="rgba(0,0,0,0.45)"; ctx.font="12px system-ui, sans-serif"; ctx.textAlign="center";
-    ctx.fillText("只允许在鱼体轮廓内绘制（超出无效）", CSS_W/2, 20);
+  function clipToCurrentShape(ctx: CanvasRenderingContext2D) {
+    const s = shapeRef.current;
+    ctx.beginPath();
+    beginFishBodyPathAbs_byShape(ctx, s, fishFrame.cx, fishFrame.cy, fishFrame.L, fishFrame.H);
+    ctx.clip();
+  }
+
+  useEffect(()=>{
+    const drawCtx = setupHiDPICanvas(drawRef.current!, CSS_W, CSS_H);
+    drawCtx.fillStyle = "#f8fafc";
+    drawCtx.fillRect(0,0,CSS_W,CSS_H);
+    
+    setupHiDPICanvas(frameRef.current!, CSS_W, CSS_H);
+    renderFrame(shape);
   },[]);
 
   const drawingRef = useRef(false);
@@ -715,12 +742,20 @@ function FishDesigner({ onCancel, onCreate }: {
 
         <div className="grid grid-cols-1 md:grid-cols-[auto,220px] gap-4">
           <div className="flex flex-col items-center">
-            <canvas
-              ref={drawRef}
-              className="rounded-xl border border-sky-200 shadow-inner touch-none bg-white"
-              style={{ width: 360, height: 200 }}
-              onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}
-            />
+            <div className="relative">
+              <canvas
+                ref={drawRef}
+                className="rounded-xl border border-sky-200 shadow-inner touch-none bg-white"
+                style={{ width: 360, height: 200 }}
+                onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}
+              />
+              {/* 轮廓层：不接收事件 */}
+              <canvas
+                ref={frameRef}
+                className="absolute inset-0 pointer-events-none"
+                style={{ width: 360, height: 200 }}
+              />
+            </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <span className="text-sm text-slate-600 mr-1">鱼形：</span>
               {[
@@ -729,12 +764,14 @@ function FishDesigner({ onCancel, onCreate }: {
                 <button
                   key={key}
                   onClick={() => { 
-                    setShape(key as FishShape); 
-                    remaskExistingDrawingToShape();
+                    const s = key as FishShape;
+                    setShape(s);
+                    shapeRef.current = s;               // 立即可用（避免闭包旧值）
+                    remaskExistingDrawingToShape();     // 旧笔迹按新轮廓立刻裁一遍
+                    renderFrame(s);                     // 轮廓层清屏后重画新轮廓
                     const ctx = drawRef.current!.getContext("2d")!;
                     ctx.fillStyle = "#f8fafc"; 
                     ctx.fillRect(0, 0, CSS_W, CSS_H);
-                    drawFrameOutline();
                     ctx.fillStyle = "rgba(0,0,0,0.45)"; 
                     ctx.font = "12px system-ui, sans-serif"; 
                     ctx.textAlign = "center";

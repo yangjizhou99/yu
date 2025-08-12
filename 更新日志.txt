@@ -1,3 +1,9 @@
+2025-08-13 05:02:00 (UTC+9)
+1. 添加frameRef作为轮廓层画布
+2. 实现setupHiDPICanvas工具函数
+3. 修改形状切换逻辑，确保立即生效
+4. 更新裁剪和渲染逻辑，解决形状切换时虚线残留问题
+
 2025-08-13 04:52:00 (UTC+9)
 1. 在FishDesigner组件中添加remaskExistingDrawingToShape函数
 2. 修改onPointerDown函数，在按下时调用remaskExistingDrawingToShape
