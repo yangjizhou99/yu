@@ -47,7 +47,7 @@ type SaveDataV1 = {
 // 工具函数
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
-function pickFoodVariant() { const r = Math.random(); let acc = 0; for (const v of FOOD_VARIANTS){ acc+=v.prob; if(r<=acc) return v; } return FOOD_VARIANTS.at(-1)!; }
+function pickFoodVariant() { const r = Math.random(); let acc = 0; for (const v of FOOD_VARIANTS){ acc+=v.prob; if(r<=acc) return v; } return FOOD_VARIANTS[FOOD_VARIANTS.length - 1]!; }
 
 // ====== 类型 ======
 interface Food { id: number; x: number; y: number; r: number; kind: FoodKind; growPct: number; }
@@ -64,12 +64,61 @@ function randomFishColor() { const hues=[195,205,215,165,180,200,30,350]; const 
 function dist(ax:number,ay:number,bx:number,by:number){const dx=bx-ax,dy=by-ay;return Math.hypot(dx,dy);}
 function lerp(a:number,b:number,t:number){return a+(b-a)*t;}
 
+// 小鱼更快、大鱼更慢（平滑），并限制上下界
+function speedMultiplier(size: number) {
+  // size=1.0 ≈ 1.09x；size=2.5 ≈ 0.70x；size<1 时略快（<=1.2x）
+  const m = 1.35 - 0.26 * size;
+  return clamp(m, 0.70, 1.20);
+}
+
 // 星形（稀有饲料）
 function drawStar(ctx: CanvasRenderingContext2D, spikes:number, outerR:number, innerR:number){
   const step=Math.PI/spikes; ctx.beginPath(); ctx.rotate(-Math.PI/2);
   for(let i=0;i<spikes;i++){ ctx.lineTo(Math.cos(i*2*step)*outerR,Math.sin(i*2*step)*outerR);
     ctx.lineTo(Math.cos((i*2+1)*step)*innerR,Math.sin((i*2+1)*step)*innerR);}
   ctx.closePath(); ctx.rotate(Math.PI/2);
+}
+
+// —— 海洋背景：深海渐变 + 光斑 + 沙地 —— //
+function drawOceanBackground(ctx: CanvasRenderingContext2D, now: number) {
+  // 1) 深海渐变
+  const grd = ctx.createLinearGradient(0, 0, 0, WORLD_H);
+  grd.addColorStop(0.00, "#0e7490"); // 浅青
+  grd.addColorStop(0.55, "#0a6aa1"); // 深蓝
+  grd.addColorStop(1.00, "#06304f"); // 海底
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+
+  // 2) 顶部光斑（轻量"海水光斑"效果，随时间缓慢下移）
+  ctx.save();
+  ctx.globalAlpha = 0.12;
+  for (let i = 0; i < 5; i++) {
+    const y = ((now * 18 + i * 180) % (WORLD_H + 220)) - 220;
+    ctx.beginPath();
+    ctx.ellipse(WORLD_W * 0.5, y, WORLD_W * 0.60, 26, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // 3) 沙地（底部 180px）
+  const seabedTop = WORLD_H - 180;
+  const sand = ctx.createLinearGradient(0, seabedTop, 0, WORLD_H);
+  sand.addColorStop(0, "#f1e2a9");
+  sand.addColorStop(1, "#d8c17a");
+  ctx.fillStyle = sand;
+  ctx.fillRect(0, seabedTop, WORLD_W, WORLD_H - seabedTop);
+
+  // 4) 沙丘起伏（柔和阴影）
+  ctx.globalAlpha = 0.25;
+  for (let i = 0; i < 3; i++) {
+    const y0 = seabedTop + 40 + i * 30;
+    ctx.beginPath();
+    ctx.ellipse(WORLD_W * (0.2 + i * 0.3), y0, 220 + i * 120, 18, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "#c8b06a";
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 }
 
 export default function App(){
@@ -252,15 +301,8 @@ export default function App(){
       const dpr=window.devicePixelRatio||1; const cam=camRef.current;
       ctx.setTransform(dpr*cam.scale,0,0,dpr*cam.scale, -cam.x*dpr*cam.scale, -cam.y*dpr*cam.scale);
 
-      // 背景
-      const grd=ctx.createLinearGradient(0,0,0,WORLD_H); grd.addColorStop(0,"#e6f7ff"); grd.addColorStop(1,"#cdeffd");
-      ctx.fillStyle=grd; ctx.fillRect(0,0,WORLD_W,WORLD_H);
-
-      // 水纹
-      ctx.globalAlpha=0.15;
-      for(let i=0;i<6;i++){ const y0=(now*20+i*200)%(WORLD_H+200)-200;
-        ctx.fillStyle="#ffffff"; ctx.beginPath(); ctx.ellipse(WORLD_W*0.5,y0,WORLD_W*0.55,22,0,0,Math.PI*2); ctx.fill(); }
-      ctx.globalAlpha=1;
+      // 背景：海洋风格（替代原先的浅蓝背景 + 水纹）
+      drawOceanBackground(ctx, now);
 
       // 饲料
       for(const fd of foodRef.current) drawFood(ctx,fd,now);
@@ -271,10 +313,11 @@ export default function App(){
         let target:Food|null=null, dMin=Infinity;
         for(const fd of foods){ const d=dist(f.x,f.y,fd.x,fd.y); if(d<f.vision && d<dMin){dMin=d; target=fd;} }
         let dvx=f.vx, dvy=f.vy;
-        if(target){ const dx=target.x-f.x, dy=target.y-f.y, len=Math.hypot(dx,dy)||1; dvx=(dx/len)*f.speed; dvy=(dy/len)*f.speed; }
+        const effSpeed = f.speed * speedMultiplier(f.sizeScale);
+        if(target){ const dx=target.x-f.x, dy=target.y-f.y, len=Math.hypot(dx,dy)||1; dvx=(dx/len)*effSpeed; dvy=(dy/len)*effSpeed; }
         else{ f.wanderT+=dt; const wobble=Math.sin(f.wanderT*1.8+f.id*1.37)*0.6;
           const curLen=Math.hypot(f.vx,f.vy)||1; let vx=f.vx/curLen, vy=f.vy/curLen;
-          const nx=-vy, ny=vx; vx+=nx*wobble*0.25; vy+=ny*wobble*0.25; const len2=Math.hypot(vx,vy)||1; dvx=(vx/len2)*f.speed; dvy=(vy/len2)*f.speed; }
+          const nx=-vy, ny=vx; vx+=nx*wobble*0.25; vy+=ny*wobble*0.25; const len2=Math.hypot(vx,vy)||1; dvx=(vx/len2)*effSpeed; dvy=(vy/len2)*effSpeed; }
         f.vx=lerp(f.vx,dvx,FISH_TURN_SMOOTH); f.vy=lerp(f.vy,dvy,FISH_TURN_SMOOTH);
         f.x+=f.vx*dt; f.y+=f.vy*dt;
 
