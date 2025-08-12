@@ -534,9 +534,9 @@ export default function App(){
       {designerOpen && (
         <FishDesigner
           onCancel={closeDesigner}
-          onCreate={(ownerName, petName, dataUrl) => {
+          onCreate={(ownerName, petName, dataUrl, shape) => {
             if (fishRef.current.length >= MAX_FISH_COUNT) { closeDesigner(); return; }
-            // 把新鱼放在“当前视野”里，方便立即看到
+            // 把新鱼放在"当前视野"里，方便立即看到
             const rect = canvasRef.current!.getBoundingClientRect();
             const viewW = rect.width / camRef.current.scale;
             const viewH = rect.height / camRef.current.scale;
@@ -556,6 +556,7 @@ export default function App(){
               targetFoodId: null,
               wanderT: rand(0, 1000),
               ownerName, petName, textureDataUrl: dataUrl,
+              shape, // 添加形状字段
             };
             fishRef.current.push(f);
             setFishCount(fishRef.current.length);
@@ -581,6 +582,8 @@ function FishDesigner({ onCancel, onCreate }: {
   const [ownerName, setOwnerName] = useState("");
   const [petName, setPetName] = useState("");
   const [shape, setShape] = useState<FishShape>("streamlined");
+  const shapeRef = useRef<FishShape>("streamlined");
+  useEffect(() => { shapeRef.current = shape; }, [shape]);
 
   const CSS_W=360, CSS_H=200;
   const fishFrame = { cx: CSS_W*0.5, cy: CSS_H*0.5, L: CSS_W*0.68, H: CSS_H*0.60 };
@@ -608,8 +611,9 @@ function FishDesigner({ onCancel, onCreate }: {
   const drawingRef = useRef(false);
   const lastRef = useRef<{x:number;y:number}|null>(null);
   function clipToFish(ctx:CanvasRenderingContext2D) {
+    const s = shapeRef.current;  // ✅ 永远是最新形状
     ctx.beginPath();
-    beginFishBodyPathAbs_byShape(ctx, shape, fishFrame.cx, fishFrame.cy, fishFrame.L, fishFrame.H);
+    beginFishBodyPathAbs_byShape(ctx, s, fishFrame.cx, fishFrame.cy, fishFrame.L, fishFrame.H);
     ctx.clip();
   }
   function getPos(e:React.PointerEvent<HTMLCanvasElement>){ const r=(e.target as HTMLCanvasElement).getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
