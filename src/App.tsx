@@ -629,6 +629,18 @@ function FishDesigner({ onCancel, onCreate }: {
   const CSS_W=360, CSS_H=200;
   const fishFrame = { cx: CSS_W*0.5, cy: CSS_H*0.5, L: CSS_W*0.68, H: CSS_H*0.60 };
 
+  function remaskExistingDrawingToShape() {
+    const cvs = drawRef.current!;
+    const ctx = cvs.getContext("2d")!;
+    ctx.save();
+    ctx.globalCompositeOperation = "destination-in";
+    ctx.beginPath();
+    beginFishBodyPathAbs_byShape(ctx, shapeRef.current, fishFrame.cx, fishFrame.cy, fishFrame.L, fishFrame.H);
+    ctx.fillStyle = "#000";
+    ctx.fill();
+    ctx.restore();
+  }
+
   useEffect(()=>{ const cvs=drawRef.current!, dpr=window.devicePixelRatio||1;
     cvs.width=Math.floor(CSS_W*dpr); cvs.height=Math.floor(CSS_H*dpr);
     cvs.style.width=`${CSS_W}px`; cvs.style.height=`${CSS_H}px`;
@@ -658,7 +670,12 @@ function FishDesigner({ onCancel, onCreate }: {
     ctx.clip();
   }
   function getPos(e:React.PointerEvent<HTMLCanvasElement>){ const r=(e.target as HTMLCanvasElement).getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
-  function onPointerDown(e:React.PointerEvent<HTMLCanvasElement>){ (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId); drawingRef.current=true; lastRef.current=getPos(e); }
+  function onPointerDown(e:React.PointerEvent<HTMLCanvasElement>){ 
+    (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId); 
+    drawingRef.current=true; 
+    lastRef.current=getPos(e);
+    remaskExistingDrawingToShape();
+  }
   function onPointerUp(e:React.PointerEvent<HTMLCanvasElement>){ drawingRef.current=false; lastRef.current=null; (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId); }
   function drawFrameOutline() {
     const cvs = drawRef.current!;
@@ -713,6 +730,7 @@ function FishDesigner({ onCancel, onCreate }: {
                   key={key}
                   onClick={() => { 
                     setShape(key as FishShape); 
+                    remaskExistingDrawingToShape();
                     const ctx = drawRef.current!.getContext("2d")!;
                     ctx.fillStyle = "#f8fafc"; 
                     ctx.fillRect(0, 0, CSS_W, CSS_H);
