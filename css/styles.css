@@ -32,3 +32,33 @@ main { padding:12px; }
 .card canvas { width:100%; height:auto; display:block; border-radius:8px; background:#0f1f33; }
 .card .meta { margin-top:6px; font-size:14px; }
 footer { padding:10px; text-align:center; opacity:0.7; font-size:12px; border-top:1px solid #223; }
+
+/* DEV Mode Styles */
+#devToggle {
+  position: absolute;
+  right: 10px;
+  bottom: 60px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: none;
+  background: #4a5568;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#devToggle.active {
+  background: #2b6cb0;
+}
+
+.dev-vision-circle {
+  stroke: rgba(100, 200, 255, 0.3);
+  stroke-width: 2px;
+  fill: none;
+}
+
+.dev-chase-line {
+  stroke: rgba(255, 100, 100, 0.6);
+  stroke-width: 1px;
+  stroke-dasharray: 5, 3;
+}
