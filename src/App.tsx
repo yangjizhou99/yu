@@ -79,6 +79,25 @@ function drawStar(ctx: CanvasRenderingContext2D, spikes:number, outerR:number, i
   ctx.closePath(); ctx.rotate(Math.PI/2);
 }
 
+// —— 鱼体路径（局部坐标，中心(0,0)，长度L，整体高度H；不包含尾巴） ——
+function beginFishBodyPath(ctx: CanvasRenderingContext2D, L: number, H: number) {
+  // 流线型轮廓：尖头(右) → 背部 → 尾柄 → 腹部 → 回到尖头
+  ctx.moveTo( +L * 0.50, 0);
+  ctx.bezierCurveTo( +L * 0.42, -H * 0.10, +L * 0.20, -H * 0.42, -L * 0.30, -H * 0.24);
+  ctx.bezierCurveTo( -L * 0.46, -H * 0.20, -L * 0.46,  +H * 0.20, -L * 0.30,  +H * 0.24);
+  ctx.bezierCurveTo( +L * 0.20,  +H * 0.42, +L * 0.42,  +H * 0.10, +L * 0.50, 0);
+}
+
+// —— 绝对坐标版：用于面板（无需translate/rotate） ——
+function drawFishBodyPathAbs(
+  ctx: CanvasRenderingContext2D, cx: number, cy: number, L: number, H: number
+) {
+  ctx.moveTo(cx + L * 0.50, cy + 0);
+  ctx.bezierCurveTo(cx + L * 0.42, cy - H * 0.10, cx + L * 0.20, cy - H * 0.42, cx - L * 0.30, cy - H * 0.24);
+  ctx.bezierCurveTo(cx - L * 0.46, cy - H * 0.20, cx - L * 0.46, cy + H * 0.20, cx - L * 0.30, cy + H * 0.24);
+  ctx.bezierCurveTo(cx + L * 0.20, cy + H * 0.42, cx + L * 0.42, cy + H * 0.10, cx + L * 0.50, cy + 0);
+}
+
 // —— 海洋背景：深海渐变 + 光斑 + 沙地 —— //
 function drawOceanBackground(ctx: CanvasRenderingContext2D, now: number) {
   // 1) 深海渐变
@@ -344,20 +363,25 @@ export default function App(){
       for(const f of fishRef.current){
         const angle=Math.atan2(f.vy,f.vx); const base=BASE_FISH_SIZE*f.sizeScale;
         const bodyLen=base*1.6, bodyH=base*0.9; const tailWobble=Math.sin((now+f.id)*8)*(base*0.22);
-        const rx=bodyLen*0.45, ry=bodyH*0.55;
 
         ctx.save(); ctx.translate(f.x,f.y); ctx.rotate(angle);
         if(!f.textureDataUrl || !texCacheRef.current.get(f.id)){
           const grdBody=ctx.createLinearGradient(0,-bodyH,0,bodyH); grdBody.addColorStop(0,"rgba(255,255,255,0.9)"); grdBody.addColorStop(1,f.color);
-          ctx.fillStyle=grdBody; ctx.beginPath(); ctx.ellipse(0,0,rx,ry,0,0,Math.PI*2); ctx.fill();
+          ctx.fillStyle=grdBody; ctx.beginPath();
+          beginFishBodyPath(ctx, bodyLen, bodyH);   // ✅ 用曲线轮廓
+          ctx.fill();
         }else{
-          const img=texCacheRef.current.get(f.id)!; ctx.save(); ctx.beginPath(); ctx.ellipse(0,0,rx,ry,0,0,Math.PI*2); ctx.clip();
-          const targetW=rx*2, targetH=ry*2; const scale=Math.max(targetW/img.width, targetH/img.height);
-          const dw=img.width*scale, dh=img.height*scale; ctx.drawImage(img,-dw/2,-dh/2,dw,dh); ctx.restore();
+          const img=texCacheRef.current.get(f.id)!; ctx.save(); ctx.beginPath();
+          beginFishBodyPath(ctx, bodyLen, bodyH);   // ✅ 用曲线轮廓
+          ctx.clip();
+          // 将纹理等比铺到"身体外接矩形"，避免变形
+          const targetW = bodyLen * 0.98;
+          const targetH = bodyH * 0.98;
+          const scale = Math.max(targetW / img.width, targetH / img.height);
+          const dw = img.width * scale, dh = img.height * scale;
+          ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+          ctx.restore();
         }
-        // 头
-        ctx.fillStyle=f.color; ctx.beginPath();
-        ctx.moveTo(bodyLen*0.5,0); ctx.lineTo(bodyLen*0.16,-bodyH*0.42); ctx.lineTo(bodyLen*0.16,bodyH*0.42); ctx.closePath(); ctx.fill();
         // 尾
         ctx.beginPath(); ctx.moveTo(-bodyLen*0.45,0); ctx.lineTo(-bodyLen*0.65,-bodyH*0.35+tailWobble); ctx.lineTo(-bodyLen*0.65,bodyH*0.35-tailWobble); ctx.closePath(); ctx.fill();
         // 眼
@@ -483,35 +507,41 @@ function FishDesigner({ onCancel, onCreate }:{
   const [petName, setPetName] = useState("");
 
   const CSS_W=360, CSS_H=200;
-  const ellipse = { cx: CSS_W*0.5, cy: CSS_H*0.5, rx: CSS_W*0.42, ry: CSS_H*0.36 };
+  const fishFrame = { cx: CSS_W*0.5, cy: CSS_H*0.5, L: CSS_W*0.68, H: CSS_H*0.60 };
 
   useEffect(()=>{ const cvs=drawRef.current!, dpr=window.devicePixelRatio||1;
     cvs.width=Math.floor(CSS_W*dpr); cvs.height=Math.floor(CSS_H*dpr);
     cvs.style.width=`${CSS_W}px`; cvs.style.height=`${CSS_H}px`;
     const ctx=cvs.getContext("2d")!; ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.fillStyle="#f8fafc"; ctx.fillRect(0,0,CSS_W,CSS_H);
-    ctx.save(); ctx.strokeStyle="rgba(2,132,199,0.8)"; ctx.lineWidth=2; ctx.setLineDash([6,6]);
-    ctx.beginPath(); ctx.ellipse(ellipse.cx,ellipse.cy,ellipse.rx,ellipse.ry,0,0,Math.PI*2); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.strokeStyle="rgba(2,132,199,0.9)"; ctx.lineWidth=2; ctx.setLineDash([6,6]);
+    ctx.beginPath();
+    drawFishBodyPathAbs(ctx, fishFrame.cx, fishFrame.cy, fishFrame.L, fishFrame.H); // ✅ 鱼形路径
+    ctx.stroke(); ctx.restore();
     ctx.fillStyle="rgba(0,0,0,0.45)"; ctx.font="12px system-ui, sans-serif"; ctx.textAlign="center";
-    ctx.fillText("只允许在椭圆内绘制（超出无效）", CSS_W/2, 20);
+    ctx.fillText("只允许在鱼体轮廓内绘制（超出无效）", CSS_W/2, 20);
   },[]);
 
   const drawingRef = useRef(false);
   const lastRef = useRef<{x:number;y:number}|null>(null);
-  function clipToEllipse(ctx:CanvasRenderingContext2D){ ctx.beginPath(); ctx.ellipse(ellipse.cx,ellipse.cy,ellipse.rx,ellipse.ry,0,0,Math.PI*2); ctx.clip(); }
+  function clipToFish(ctx:CanvasRenderingContext2D) {
+    ctx.beginPath();
+    drawFishBodyPathAbs(ctx, fishFrame.cx, fishFrame.cy, fishFrame.L, fishFrame.H);
+    ctx.clip();
+  }
   function getPos(e:React.PointerEvent<HTMLCanvasElement>){ const r=(e.target as HTMLCanvasElement).getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
   function onPointerDown(e:React.PointerEvent<HTMLCanvasElement>){ (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId); drawingRef.current=true; lastRef.current=getPos(e); }
   function onPointerUp(e:React.PointerEvent<HTMLCanvasElement>){ drawingRef.current=false; lastRef.current=null; (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId); }
   function onPointerMove(e:React.PointerEvent<HTMLCanvasElement>){
     if(!drawingRef.current) return; const cvs=drawRef.current!, ctx=cvs.getContext("2d")!;
     const cur=getPos(e); const last=lastRef.current??cur;
-    ctx.save(); clipToEllipse(ctx); ctx.lineCap="round"; ctx.lineJoin="round"; ctx.lineWidth=brushSize;
+    ctx.save(); clipToFish(ctx); ctx.lineCap="round"; ctx.lineJoin="round"; ctx.lineWidth=brushSize;
     if(isEraser){ ctx.globalCompositeOperation="destination-out"; ctx.strokeStyle="rgba(0,0,0,1)"; }
     else{ ctx.globalCompositeOperation="source-over"; ctx.strokeStyle=brushColor; }
     ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(cur.x,cur.y); ctx.stroke(); ctx.restore();
     lastRef.current=cur;
   }
-  function clearDrawing(){ const cvs=drawRef.current!, ctx=cvs.getContext("2d")!; ctx.save(); clipToEllipse(ctx); ctx.clearRect(0,0,CSS_W,CSS_H); ctx.restore(); }
+  function clearDrawing(){ const cvs=drawRef.current!, ctx=cvs.getContext("2d")!; ctx.save(); clipToFish(ctx); ctx.clearRect(0,0,CSS_W,CSS_H); ctx.restore(); }
   function handleCreate(){ if(!ownerName.trim()||!petName.trim()){ alert("请填写 用户名字 和 宠物鱼名字"); return; }
     const dataUrl=drawRef.current!.toDataURL("image/png"); onCreate(ownerName.trim(), petName.trim(), dataUrl); }
 
