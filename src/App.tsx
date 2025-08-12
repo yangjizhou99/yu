@@ -441,20 +441,63 @@ export default function App(){
         if(!f.textureDataUrl || !texCacheRef.current.get(f.id)){
           const grdBody=ctx.createLinearGradient(0,-bodyH,0,bodyH); grdBody.addColorStop(0,"rgba(255,255,255,0.9)"); grdBody.addColorStop(1,f.color);
           ctx.fillStyle=grdBody; ctx.beginPath();
-          beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen, bodyH);   // ✅ 用曲线轮廓
+          beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen, bodyH);
           ctx.fill();
         }else{
           const img=texCacheRef.current.get(f.id)!; ctx.save(); ctx.beginPath();
-          beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen, bodyH);   // ✅ 用曲线轮廓
+          beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen, bodyH);
           ctx.clip();
-          // 将纹理等比铺到"身体外接矩形"，避免变形
-          const targetW = bodyLen * 0.98;
-          const targetH = bodyH * 0.98;
-          const scale = Math.max(targetW / img.width, targetH / img.height);
-          const dw = img.width * scale, dh = img.height * scale;
-          ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+          
+          // 泳动微波效果（可选）
+          const strips = 28;
+          const imgW = img.width, imgH = img.height;
+          for (let i = 0; i < strips; i++) {
+            const sx = Math.floor((i / strips) * imgW);
+            const sw = Math.floor(imgW / strips);
+            const dx = -bodyLen * 0.5 + (i / strips) * bodyLen;
+            const dw = bodyLen / strips;
+            const wobble = Math.sin(now * 6 + i * 0.6 + f.id * 1.7) * (bodyH * 0.02);
+            ctx.drawImage(img, sx, 0, sw, imgH, dx, -bodyH * 0.5 + wobble, dw, bodyH);
+          }
+
+          // 顶光效果
+          ctx.save();
+          ctx.globalCompositeOperation = "soft-light";
+          const topLight = ctx.createLinearGradient(0, -bodyH*0.6, 0, +bodyH*0.6);
+          topLight.addColorStop(0.00, "rgba(255,255,255,0.75)");
+          topLight.addColorStop(0.35, "rgba(255,255,255,0.25)");
+          topLight.addColorStop(1.00, "rgba(255,255,255,0.00)");
+          ctx.fillStyle = topLight;
+          ctx.beginPath(); beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen, bodyH); ctx.fill();
+          ctx.restore();
+
+          // 腹部阴影
+          ctx.save();
+          ctx.globalCompositeOperation = "multiply";
+          const belly = ctx.createRadialGradient(0, bodyH*0.25, bodyH*0.1, 0, bodyH*0.25, bodyH*0.7);
+          belly.addColorStop(0.00, "rgba(0,0,0,0.00)");
+          belly.addColorStop(1.00, "rgba(0,0,0,0.22)");
+          ctx.fillStyle = belly;
+          ctx.beginPath(); beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen, bodyH); ctx.fill();
+          ctx.restore();
+
           ctx.restore();
         }
+
+        // 外描边
+        ctx.lineWidth = 0.8;
+        ctx.strokeStyle = "rgba(0,0,0,0.18)";
+        ctx.beginPath(); beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen, bodyH); ctx.stroke();
+
+        // 内暗沿边
+        ctx.save();
+        ctx.globalCompositeOperation = "source-atop";
+        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = "rgba(0,0,0,0.12)";
+        ctx.beginPath(); beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen*0.985, bodyH*0.985);
+        ctx.stroke();
+        ctx.restore();
+
         // 尾
         ctx.beginPath(); ctx.moveTo(-bodyLen*0.45,0); ctx.lineTo(-bodyLen*0.65,-bodyH*0.35+tailWobble); ctx.lineTo(-bodyLen*0.65,bodyH*0.35-tailWobble); ctx.closePath(); ctx.fill();
         // 眼
