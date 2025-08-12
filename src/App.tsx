@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 
-// —— Fish Pond Mini‑Game ————————————————————————————
+// —— Fish Pond Mini-Game ————————————————————————————
 // 功能：
 // 1) “+1 条鱼”按钮可往鱼塘添加一条会游动的鱼。
 // 2) 点击鱼塘画布可以“投喂”饲料。
 // 3) 鱼在视野范围内发现饲料会游过去吃；每吃一个体型 +1%（size *= 1.01）。
-// 4) 纯前端，无外部资源；可直接在 React 环境中运行。
+// 4) 新增：本地存档（localStorage），刷新不丢数据；清空存档按钮。
 
 // ====== 可调整的参数 ======
 const BASE_FISH_SIZE = 18; // 鱼体基准像素尺寸（绘制时按 sizeScale 缩放）
@@ -16,6 +16,16 @@ const FISH_VISION = 160; // 视野半径（像素）
 const EAT_RADIUS = 14; // 鱼嘴吃东西的半径（会乘以体型缩放）
 const FOOD_RADIUS = 5; // 饲料半径
 const MAX_FISH_COUNT = 60; // 保险上限
+
+// —— 存档配置 ——
+const STORAGE_KEY = "fish-pond-save-v1";
+type SaveData = {
+  version: 1;
+  nextId: number;
+  fish: Fish[];
+  food: Food[];
+  savedAt: string;
+};
 
 // 便捷函数
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
@@ -52,7 +62,7 @@ function randomFishColor() {
   return `hsl(${h} ${s}% ${l}%)`;
 }
 
-// 计算两点距离与方向
+// 计算两点距离
 function dist(ax: number, ay: number, bx: number, by: number) {
   const dx = bx - ax;
   const dy = by - ay;
@@ -63,7 +73,6 @@ function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
-// 主组件
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -76,6 +85,50 @@ export default function App() {
   const nextIdRef = useRef(1);
   const animRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
+
+  // —— 存档辅助：脏标记 + 节流保存 ——
+  const dirtyRef = useRef(false);
+  const saveTimerRef = useRef<number | null>(null);
+
+  function saveToStorage() {
+    const data: SaveData = {
+      version: 1,
+      nextId: nextIdRef.current,
+      fish: fishRef.current,
+      food: foodRef.current,
+      savedAt: new Date().toISOString(),
+    };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch {
+      // ignore quota errors
+    }
+  }
+
+  function scheduleSave(throttleMs = 800) {
+    dirtyRef.current = true;
+    if (saveTimerRef.current != null) return;
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
+      if (dirtyRef.current) {
+        saveToStorage();
+        dirtyRef.current = false;
+      }
+    }, throttleMs);
+  }
+
+  function loadFromStorage(): SaveData | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw) as SaveData;
+      if (!data || data.version !== 1) return null;
+      if (!Array.isArray(data.fish) || !Array.isArray(data.food)) return null;
+      return data;
+    } catch {
+      return null;
+    }
+  }
 
   // 适配高 DPI 的画布尺寸
   function resizeCanvas() {
@@ -91,10 +144,37 @@ export default function App() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 之后按 CSS 像素坐标绘制
   }
 
-  React.useEffect(() => {
+  useEffect(() => {
     const ro = new ResizeObserver(resizeCanvas);
     if (containerRef.current) ro.observe(containerRef.current);
     return () => ro.disconnect();
+  }, []);
+
+  // 挂载时尝试加载存档
+  useEffect(() => {
+    resizeCanvas();
+    const data = loadFromStorage();
+    if (data) {
+      fishRef.current = data.fish ?? [];
+      foodRef.current = data.food ?? [];
+      nextIdRef.current = Math.max(1, data.nextId ?? 1);
+      setFishCount(fishRef.current.length);
+      setFoodCount(foodRef.current.length);
+    }
+  }, []);
+
+  // 离开页面或切到后台时强制保存一次
+  useEffect(() => {
+    const onBeforeUnload = () => saveToStorage();
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") saveToStorage();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   // 添加一条鱼
@@ -121,6 +201,7 @@ export default function App() {
     };
     fishRef.current.push(f);
     setFishCount(fishRef.current.length);
+    scheduleSave(); // 标记存档
   }
 
   // 画布点击投喂
@@ -129,19 +210,33 @@ export default function App() {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     const id = nextIdRef.current++;
-    foodRef.current.push({ id, x, y, r: 5 });
+    foodRef.current.push({ id, x, y, r: FOOD_RADIUS });
     setFoodCount(foodRef.current.length);
+    scheduleSave(); // 标记存档
+  }
+
+  // 清空存档并重置场景
+  function clearSaveAndReset() {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {}
+    fishRef.current = [];
+    foodRef.current = [];
+    nextIdRef.current = 1;
+    setFishCount(0);
+    setFoodCount(0);
+    scheduleSave(); // 写入空存档
   }
 
   // 主循环
-  React.useEffect(() => {
+  useEffect(() => {
     const cvs = canvasRef.current!;
     const ctx = cvs.getContext("2d")!;
     resizeCanvas();
 
     const step = (t: number) => {
       const now = t / 1000; // 秒
-      const last = (lastTimeRef.current ?? now);
+      const last = lastTimeRef.current ?? now;
       const dt = clamp(now - last, 0, 0.05); // 最大步长 50ms 防止穿透
       lastTimeRef.current = now;
 
@@ -176,6 +271,8 @@ export default function App() {
 
       // —— 更新鱼逻辑 ——
       const foods = foodRef.current;
+      let ateSomething = false;
+
       for (const f of fishRef.current) {
         // 1) 寻找目标（最近可见饲料）
         let target: Food | null = null;
@@ -188,7 +285,7 @@ export default function App() {
           }
         }
 
-        // 2) 计算期望速度（有目标则朝向目标；否则“游走”）
+        // 2) 期望速度（有目标则朝其移动；否则“游走”）
         let desiredVX = f.vx;
         let desiredVY = f.vy;
         if (target) {
@@ -198,13 +295,12 @@ export default function App() {
           desiredVX = (dx / len) * f.speed;
           desiredVY = (dy / len) * f.speed;
         } else {
-          // 简单噪声游走（缓慢左右摆尾改变方向）
+          // 噪声游走（缓慢左右摆尾改变方向）
           f.wanderT += dt;
           const wobble = Math.sin(f.wanderT * 1.8 + f.id * 1.37) * 0.6; // -0.6~0.6
           const curLen = Math.hypot(f.vx, f.vy) || 1;
           let vx = f.vx / curLen;
           let vy = f.vy / curLen;
-          // 将法向量叠加一点点
           const nx = -vy;
           const ny = vx;
           vx = vx + nx * wobble * 0.25;
@@ -215,8 +311,8 @@ export default function App() {
         }
 
         // 3) 平滑转向/加速
-        f.vx = lerp(f.vx, desiredVX, 0.08);
-        f.vy = lerp(f.vy, desiredVY, 0.08);
+        f.vx = lerp(f.vx, desiredVX, FISH_TURN_SMOOTH);
+        f.vy = lerp(f.vy, desiredVY, FISH_TURN_SMOOTH);
 
         // 4) 位置更新
         f.x += f.vx * dt;
@@ -236,19 +332,21 @@ export default function App() {
         }
 
         // 6) 吃东西（碰撞检测）
-        const eatR = (14 * f.sizeScale) + 5;
+        const eatR = (EAT_RADIUS * f.sizeScale) + FOOD_RADIUS;
         for (let i = foods.length - 1; i >= 0; i--) {
           const fd = foods[i];
           if (dist(f.x, f.y, fd.x, fd.y) <= eatR) {
             foods.splice(i, 1);
             f.sizeScale *= 1.01; // 体型 +1%
+            ateSomething = true;
           }
         }
       }
 
-      // 如有吃掉饲料，更新 UI 计数
-      (window as any).__debugFoodCount = foods.length;
-      // 用 setFoodCount 触发 React UI 更新
+      // 如有吃掉饲料，合并节流保存一次
+      if (ateSomething) scheduleSave();
+
+      // 更新 UI 计数
       setFoodCount(foods.length);
 
       // —— 绘制鱼 ——
@@ -297,12 +395,12 @@ export default function App() {
         ctx.arc(bodyLen * 0.28, -bodyH * 0.12, Math.max(1.5, base * 0.07), 0, Math.PI * 2);
         ctx.fill();
 
-        // 视野可选（按住 Alt 键显示）
+        // 视野可选（Alt+V 显示）
         if ((window as any).__showVision) {
           ctx.strokeStyle = "rgba(0,0,0,0.08)";
           ctx.setLineDash([6, 6]);
           ctx.beginPath();
-          ctx.arc(0, 0, (fishRef.current.find(ff => ff.id === f.id)?.vision) || 160, 0, Math.PI * 2);
+          ctx.arc(0, 0, f.vision, 0, Math.PI * 2);
           ctx.stroke();
           ctx.setLineDash([]);
         }
@@ -320,7 +418,7 @@ export default function App() {
   }, []);
 
   // 键盘：Alt+V 切换视野圈显示（仅调试）
-  React.useEffect(() => {
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === "v" && e.altKey) {
         (window as any).__showVision = !(window as any).__showVision;
@@ -333,7 +431,7 @@ export default function App() {
   return (
     <div className="w-full max-w-4xl mx-auto">
       <div className="flex items-center justify-between gap-3 mb-3">
-        <h2 className="text-xl font-semibold">🐟 小鱼塘 Mini‑Game</h2>
+        <h2 className="text-xl font-semibold">🐟 小鱼塘 Mini-Game</h2>
         <div className="flex items-center gap-2">
           <button
             onClick={addFish}
@@ -346,6 +444,7 @@ export default function App() {
             onClick={() => {
               fishRef.current = [];
               setFishCount(0);
+              scheduleSave();
             }}
             className="px-3 py-1.5 rounded-2xl shadow-sm bg-slate-200 hover:bg-slate-300"
             title="清空所有鱼"
@@ -356,11 +455,19 @@ export default function App() {
             onClick={() => {
               foodRef.current = [];
               setFoodCount(0);
+              scheduleSave();
             }}
             className="px-3 py-1.5 rounded-2xl shadow-sm bg-amber-200 hover:bg-amber-300"
             title="清空饲料"
           >
             清空饲料
+          </button>
+          <button
+            onClick={clearSaveAndReset}
+            className="px-3 py-1.5 rounded-2xl shadow-sm bg-rose-200 hover:bg-rose-300"
+            title="清空本地存档并重置场景"
+          >
+            清空存档
           </button>
         </div>
       </div>
