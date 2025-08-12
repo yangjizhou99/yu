@@ -52,7 +52,7 @@ function pickFoodVariant() { const r = Math.random(); let acc = 0; for (const v 
 // ====== 类型 ======
 interface Food { id: number; x: number; y: number; r: number; kind: FoodKind; growPct: number; }
 // 新增：鱼形类型
-type FishShape = "streamlined" | "angelfish" | "swordfish" | "longtail";
+type FishShape = "angelfish" | "swordfish" | "longtail";
 
 interface Fish {
   id: number; x: number; y: number; vx: number; vy: number; speed: number;
@@ -87,16 +87,14 @@ function drawStar(ctx: CanvasRenderingContext2D, spikes:number, outerR:number, i
 function beginFishBodyPath_byShape(ctx: CanvasRenderingContext2D, shape: FishShape, L: number, H: number) {
   if (shape === "angelfish") return beginFishBodyPath_angelfish(ctx, L, H);
   if (shape === "swordfish")  return beginFishBodyPath_swordfish(ctx, L, H);
-  if (shape === "longtail")   return beginFishBodyPath_longtail(ctx, L, H);
-  return beginFishBodyPath_streamlined(ctx, L, H); // 默认
+  return beginFishBodyPath_longtail(ctx, L, H); // 默认长尾
 }
 
 // —— 绝对坐标版：给面板用（无需 translate/rotate）
 function beginFishBodyPathAbs_byShape(ctx: CanvasRenderingContext2D, shape: FishShape, cx: number, cy: number, L: number, H: number) {
   if (shape === "angelfish") return beginFishBodyPathAbs_angelfish(ctx, cx, cy, L, H);
   if (shape === "swordfish")  return beginFishBodyPathAbs_swordfish(ctx, cx, cy, L, H);
-  if (shape === "longtail")   return beginFishBodyPathAbs_longtail(ctx, cx, cy, L, H);
-  return beginFishBodyPathAbs_streamlined(ctx, cx, cy, L, H);
+  return beginFishBodyPathAbs_longtail(ctx, cx, cy, L, H); // 默认长尾
 }
 
 /** —— 1) 流线型（现有基础款，略尖头、饱腹、细尾柄） —— */
@@ -291,7 +289,7 @@ export default function App(){
       setFishCount(fishRef.current.length); setFoodCount(foodRef.current.length);
       for(const f of fishRef.current){ 
         if(f.textureDataUrl){ const img=new Image(); img.src=f.textureDataUrl; texCacheRef.current.set(f.id,img); }
-        if(!f.shape) f.shape = "streamlined"; // 为旧存档设置默认形状
+        if(!f.shape) f.shape = "angelfish"; // 为旧存档设置默认形状
       }
     }
   },[]);
@@ -443,11 +441,11 @@ export default function App(){
         if(!f.textureDataUrl || !texCacheRef.current.get(f.id)){
           const grdBody=ctx.createLinearGradient(0,-bodyH,0,bodyH); grdBody.addColorStop(0,"rgba(255,255,255,0.9)"); grdBody.addColorStop(1,f.color);
           ctx.fillStyle=grdBody; ctx.beginPath();
-          beginFishBodyPath_byShape(ctx, f.shape ?? "streamlined", bodyLen, bodyH);   // ✅ 用曲线轮廓
+          beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen, bodyH);   // ✅ 用曲线轮廓
           ctx.fill();
         }else{
           const img=texCacheRef.current.get(f.id)!; ctx.save(); ctx.beginPath();
-          beginFishBodyPath_byShape(ctx, f.shape ?? "streamlined", bodyLen, bodyH);   // ✅ 用曲线轮廓
+          beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen, bodyH);   // ✅ 用曲线轮廓
           ctx.clip();
           // 将纹理等比铺到"身体外接矩形"，避免变形
           const targetW = bodyLen * 0.98;
@@ -581,8 +579,8 @@ function FishDesigner({ onCancel, onCreate }: {
   const [isEraser, setIsEraser] = useState(false);
   const [ownerName, setOwnerName] = useState("");
   const [petName, setPetName] = useState("");
-  const [shape, setShape] = useState<FishShape>("streamlined");
-  const shapeRef = useRef<FishShape>("streamlined");
+  const [shape, setShape] = useState<FishShape>("angelfish");
+  const shapeRef = useRef<FishShape>("angelfish");
   useEffect(() => { shapeRef.current = shape; }, [shape]);
 
   const CSS_W=360, CSS_H=200;
@@ -666,7 +664,7 @@ function FishDesigner({ onCancel, onCreate }: {
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <span className="text-sm text-slate-600 mr-1">鱼形：</span>
               {[
-                ["streamlined","流线型"], ["angelfish","神仙鱼"], ["swordfish","旗鱼"], ["longtail","长尾型"]
+                ["angelfish","神仙鱼"], ["swordfish","旗鱼"], ["longtail","长尾斗鱼"]
               ].map(([key,label]) => (
                 <button
                   key={key}
