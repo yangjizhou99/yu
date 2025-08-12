@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Co-Fish Pond (Offline MVP)</title>
+  <link rel="stylesheet" href="css/styles.css"/>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🐟 Co‑Fish Pond</div>
+    <nav class="tabs">
+      <button data-tab="create" class="tab active">创作我的鱼</button>
+      <button data-tab="pond" class="tab">鱼塘</button>
+      <button data-tab="mine" class="tab">我的鱼</button>
+    </nav>
+  </header>
+  <main>
+    <section id="tab-create" class="tab-panel active">
+      <div class="panel">
+        <aside class="sidebar">
+          <h3>选择鱼种</h3>
+          <div id="species-list" class="species-list"></div>
+          <div class="form">
+            <label>主人名</label>
+            <input id="ownerName" placeholder="例如：Jizhou"/>
+            <label>鱼的名字</label>
+            <input id="fishName" placeholder="例如：Momo"/>
+          </div>
+          <button id="saveFish" class="primary">保存到我的鱼</button>
+          <div class="hint">提示：按住鼠标左键在轮廓内涂色；右键或按 E 作为橡皮；数字键 1/2/3 切换画笔大小；F 填充；I 吸管；Z 撤销，Y 重做。</div>
+        </aside>
+        <section class="editor">
+          <div class="toolbar">
+            <input type="color" id="colorPicker" value="#ff7f50"/>
+            <button id="brushSmall">细笔(1)</button>
+            <button id="brushMed">中笔(2)</button>
+            <button id="brushLarge">粗笔(3)</button>
+            <button id="fillBtn">填充(F)</button>
+            <button id="eraserBtn">橡皮(E)</button>
+            <button id="eyedropBtn">吸管(I)</button>
+            <button id="undoBtn">撤销(Z)</button>
+            <button id="redoBtn">重做(Y)</button>
+            <span class="mode" id="modeLabel">模式：画笔</span>
+          </div>
+          <canvas id="editorCanvas" width="760" height="480"></canvas>
+        </section>
+      </div>
+    </section>
+    <section id="tab-pond" class="tab-panel">
+      <div class="pond-wrap">
+        <canvas id="pondCanvas" width="1024" height="576"></canvas>
+        <button id="feedBtn" class="feed">投喂</button>
+        <div id="pondHud" class="hud"></div>
+      </div>
+    </section>
+    <section id="tab-mine" class="tab-panel">
+      <div id="mineList" class="grid"></div>
+    </section>
+  </main>
+  <footer><span>离线演示版 · 无需安装 · 仅单机</span></footer>
+  <script src="js/app.js"></script>
+</body>
+</html>
