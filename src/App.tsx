@@ -88,6 +88,155 @@ function drawStar(ctx: CanvasRenderingContext2D, spikes:number, outerR:number, i
   ctx.closePath(); ctx.rotate(Math.PI/2);
 }
 
+// —— 贴图定义 —— //
+type TextureKey = "clownfish" | "blueTang" | "koi" | "whaleShark" | "lionfish" | "parrotfish";
+type TextureDef = {
+  key: TextureKey;
+  label: string;
+  // 推荐使用的轮廓（可按你项目已有值：angelfish / swordfish / longtail）
+  shape: FishShape;
+  // 生成一个 w×h 的贴图，并返回 dataURL
+  make: (w: number, h: number) => string;
+  // 预览（初始化后生成一次）
+  preview?: string;
+};
+
+// 小工具：创建离屏画布
+function makeOffscreen(w: number, h: number) {
+  const cvs = document.createElement("canvas");
+  cvs.width = w; cvs.height = h;
+  const ctx = cvs.getContext("2d")!;
+  return { cvs, ctx };
+}
+
+// 各类程序贴图（保证横向为主的纹理，便于鱼体覆盖）
+function tex_clownfish(w:number, h:number) {
+  const { cvs, ctx } = makeOffscreen(w, h);
+  // 橙底
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, "#ffae2b"); g.addColorStop(1, "#ff8b00");
+  ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+  // 三道白带 + 黑边
+  const bands = [0.2, 0.5, 0.8];
+  for (const x of bands) {
+    const cx = x * w, bw = w*0.12, br = bw*0.45;
+    ctx.fillStyle="#ffffff";
+    ctx.beginPath(); ctx.moveTo(cx-bw,0); ctx.quadraticCurveTo(cx,br,cx+bw,0);
+    ctx.lineTo(cx+bw,h); ctx.quadraticCurveTo(cx,h-br,cx-bw,h); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle="rgba(0,0,0,0.65)"; ctx.lineWidth=bw*0.22; ctx.stroke();
+  }
+  return cvs.toDataURL("image/png");
+}
+
+function tex_blueTang(w:number, h:number) {
+  const { cvs, ctx } = makeOffscreen(w, h);
+  // 蓝底
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, "#3aa9ff"); g.addColorStop(1, "#1557c0");
+  ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+  // 黑色"调色板"块（中段弧形）
+  ctx.fillStyle="#0a1422";
+  ctx.beginPath();
+  ctx.moveTo(0.15*w, 0.25*h);
+  ctx.bezierCurveTo(0.40*w, 0.05*h, 0.65*w, 0.10*h, 0.95*w, 0.20*h);
+  ctx.lineTo(0.95*w, 0.80*h);
+  ctx.bezierCurveTo(0.65*w, 0.90*h, 0.40*w, 0.95*h, 0.15*w, 0.75*h);
+  ctx.closePath(); ctx.fill();
+  // 尾部黄块
+  const yg = ctx.createLinearGradient(w*0.8,0,w,0);
+  yg.addColorStop(0,"#fff35a"); yg.addColorStop(1,"#ffd100");
+  ctx.fillStyle = yg; ctx.fillRect(w*0.82, 0, w*0.18, h);
+  return cvs.toDataURL("image/png");
+}
+
+function tex_koi(w:number, h:number) {
+  const { cvs, ctx } = makeOffscreen(w, h);
+  ctx.fillStyle="#f7f7f7"; ctx.fillRect(0,0,w,h);
+  // 随机红斑（2~4 块）
+  const n = 2 + Math.floor(Math.random()*3);
+  for(let i=0;i<n;i++){
+    const cx = w*(0.15+0.7*Math.random());
+    const cy = h*(0.25+0.5*Math.random());
+    const rx = w*(0.10+0.15*Math.random());
+    const ry = h*(0.12+0.18*Math.random());
+    ctx.save();
+    ctx.translate(cx, cy); ctx.rotate((Math.random()-0.5)*0.7);
+    ctx.fillStyle = "rgba(220,20,20,0.95)";
+    ctx.beginPath(); ctx.ellipse(0,0,rx,ry,0,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  // 轻微噪点
+  const ng = ctx.createLinearGradient(0,0,0,h);
+  ng.addColorStop(0,"rgba(0,0,0,0.03)"); ng.addColorStop(1,"rgba(0,0,0,0.00)");
+  ctx.fillStyle=ng; ctx.fillRect(0,0,w,h);
+  return cvs.toDataURL("image/png");
+}
+
+function tex_whaleShark(w:number, h:number) {
+  const { cvs, ctx } = makeOffscreen(w, h);
+  const g = ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,"#1aa5a5"); g.addColorStop(1,"#0b5570");
+  ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+  ctx.fillStyle="rgba(255,255,255,0.9)";
+  const gridX=13, gridY=7;
+  for(let iy=0; iy<gridY; iy++){
+    for(let ix=0; ix<gridX; ix++){
+      const x = (ix+0.5 + (iy%2)*0.5) * (w/gridX);
+      const y = (iy+0.4) * (h/(gridY+0.5));
+      const r = Math.min(w,h)*0.012*(1+0.4*Math.sin(ix*0.7+iy*0.5));
+      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    }
+  }
+  return cvs.toDataURL("image/png");
+}
+
+function tex_lionfish(w:number, h:number) {
+  const { cvs, ctx } = makeOffscreen(w, h);
+  const base = ctx.createLinearGradient(0,0,0,h);
+  base.addColorStop(0,"#f6eee6"); base.addColorStop(1,"#efe2d8");
+  ctx.fillStyle=base; ctx.fillRect(0,0,w,h);
+  // 斜向深棕条纹
+  ctx.strokeStyle="#7b3f1b"; ctx.lineWidth = h*0.16; ctx.globalAlpha=0.85;
+  for(let i=-2;i<10;i++){ ctx.beginPath();
+    ctx.moveTo(i*0.18*w, -0.1*h);
+    ctx.lineTo((i+3)*0.18*w, 1.1*h); ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+  return cvs.toDataURL("image/png");
+}
+
+function tex_parrotfish(w:number, h:number) {
+  const { cvs, ctx } = makeOffscreen(w, h);
+  const stops = ["#23c2a6","#2fb3df","#4e79ff","#9a6bff","#f25fd0","#ff7f4d"];
+  const g = ctx.createLinearGradient(0,0,w,0);
+  stops.forEach((c,i)=> g.addColorStop(i/(stops.length-1), c));
+  ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+  // 轻微横向纹理
+  ctx.globalAlpha=0.15; ctx.fillStyle="#ffffff";
+  for(let i=0;i<12;i++){ const y = ((i+0.5)/12)*h;
+    ctx.fillRect(0,y, w, 1.2);
+  }
+  ctx.globalAlpha=1;
+  return cvs.toDataURL("image/png");
+}
+
+// —— 贴图清单（推荐与轮廓形状搭配） —— //
+const TEXTURE_PACK: TextureDef[] = [
+  { key:"clownfish",  label:"小丑鱼",  shape:"angelfish", make: tex_clownfish },
+  { key:"blueTang",   label:"蓝吊鱼",  shape:"angelfish", make: tex_blueTang },
+  { key:"koi",        label:"锦鲤",    shape:"angelfish", make: tex_koi },
+  { key:"whaleShark", label:"鲸鲨肌理",shape:"swordfish", make: tex_whaleShark },
+  { key:"lionfish",   label:"狮子鱼",  shape:"angelfish", make: tex_lionfish },
+  { key:"parrotfish", label:"鹦嘴鱼",  shape:"longtail",  make: tex_parrotfish },
+];
+
+// 初始化预览（只跑一次）
+function initTexturePreviews() {
+  for (const t of TEXTURE_PACK) {
+    if (!t.preview) t.preview = t.make(120, 60);
+  }
+}
+
 // —— 通用：按形状生成鱼体路径（局部坐标，中心(0,0)，长度 L，高度 H；不含尾鳍） ——
 function beginFishBodyPath_byShape(ctx: CanvasRenderingContext2D, shape: FishShape, L: number, H: number) {
   if (shape === "angelfish") return beginFishBodyPath_angelfish(ctx, L, H);
@@ -279,6 +428,9 @@ export default function App(){
   };
   const closeDetailEditor = () => setDetailEditorOpen(false);
 
+  // 贴图选择器状态
+  const [showTexPicker, setShowTexPicker] = useState(false);
+
   // 存档：节流保存
   const dirtyRef = useRef(false); const saveTimerRef = useRef<number|null>(null);
   function saveToStorage(){ const data:SaveDataV3={version:3,nextId:nextIdRef.current,fish:fishRef.current,food:foodRef.current,savedAt:new Date().toISOString()};
@@ -319,6 +471,9 @@ export default function App(){
 
   // Resize
   useEffect(()=>{ const ro=new ResizeObserver(resizeCanvas); if(containerRef.current) ro.observe(containerRef.current); return ()=>ro.disconnect(); },[]);
+
+  // 初始化贴图预览
+  useEffect(() => { initTexturePreviews(); }, []);
 
   // 加载存档
   useEffect(()=>{
@@ -370,6 +525,45 @@ export default function App(){
       vx:Math.cos(angle)*spd, vy:Math.sin(angle)*spd, speed:spd, sizeScale:rand(0.9,1.1),
       color:randomFishColor(), vision:FISH_VISION, targetFoodId:null, wanderT:rand(0,1000) };
     fishRef.current.push(f); setFishCount(fishRef.current.length); scheduleSave();
+  }
+
+  function addFishWithTexture(texKey: TextureKey) {
+    const def = TEXTURE_PACK.find(d => d.key === texKey)!;
+    const dataUrl = def.make(256, 128);          // 生成正式贴图
+    // —— 放在"当前视野"里，和 addFish() 一致 —— //
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const cam = camRef.current;
+    const viewW = rect.width / cam.scale, viewH = rect.height / cam.scale;
+    const angle = rand(0, Math.PI * 2);
+    const spd = rand(FISH_SPEED_MIN, FISH_SPEED_MAX);
+    const id = nextIdRef.current++;
+
+    const f: Fish = {
+      id,
+      x: rand(cam.x + 40, cam.x + viewW - 40),
+      y: rand(cam.y + 40, cam.y + viewH - 40),
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd,
+      speed: spd,
+      sizeScale: 1.0,
+      color: randomFishColor(),
+      vision: FISH_VISION,
+      targetFoodId: null,
+      wanderT: rand(0, 1000),
+      ownerName: undefined,
+      petName: def.label,            // 默认名字用贴图名，可改
+      textureDataUrl: dataUrl,
+      shape: def.shape,              // ✅ 搭配轮廓
+    };
+
+    fishRef.current.push(f);
+    setFishCount(fishRef.current.length);
+
+    // 纹理缓存
+    const img = new Image(); img.src = dataUrl;
+    texCacheRef.current.set(id, img);
+
+    scheduleSave();
   }
 
   function clearSaveAndReset(){
@@ -595,6 +789,28 @@ export default function App(){
           <button onClick={fitAll} className="px-2 py-1 rounded-2xl bg-slate-200 hover:bg-slate-300">⤢ 全景</button>
 
           <button onClick={addFish} className="px-3 py-1.5 rounded-2xl shadow-sm bg-sky-500 text-white hover:bg-sky-600 active:scale-[0.98]">+1 条鱼</button>
+          
+          <div className="relative">
+            <button
+              onClick={() => setShowTexPicker(v => !v)}
+              className="px-3 py-1.5 rounded-2xl shadow-sm bg-indigo-500 text-white hover:bg-indigo-600"
+              title="从贴图库添加海洋生物皮肤"
+            >🖼 贴图海生物</button>
+
+            {showTexPicker && (
+              <div className="absolute right-0 mt-2 w-[360px] p-2 bg-white rounded-xl shadow-lg border grid grid-cols-3 gap-2 z-50">
+                {TEXTURE_PACK.map(t => (
+                  <button key={t.key}
+                    onClick={() => { addFishWithTexture(t.key); setShowTexPicker(false); }}
+                    className="group rounded-lg border hover:shadow-sm overflow-hidden text-xs">
+                    <img src={t.preview} alt={t.label} className="w-full h-[60px] object-cover" />
+                    <div className="px-2 py-1 text-center">{t.label}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button onClick={openDesigner} className="px-3 py-1.5 rounded-2xl shadow-sm bg-violet-500 text-white hover:bg-violet-600 active:scale-[0.98]">🎨 自定义新鱼</button>
           <button onClick={openOutlineEditor} className="px-3 py-1.5 rounded-2xl shadow-sm bg-emerald-500 text-white hover:bg-emerald-600 active:scale-[0.98]">🎯 创建新鱼形（两步）</button>
           <button onClick={()=>{ fishRef.current=[]; setFishCount(0); scheduleSave(); }} className="px-3 py-1.5 rounded-2xl bg-slate-200 hover:bg-slate-300">清空鱼</button>

@@ -1,3 +1,13 @@
+2025-08-13 15:21:00 (UTC+9) - v5.3 海洋生物贴图系统
+1. 新增6种程序生成的海洋生物贴图：小丑鱼、蓝吊鱼、锦鲤、鲸鲨肌理、狮子鱼、鹦嘴鱼
+2. 实现贴图定义系统(TextureDef)和生成器函数(tex_clownfish等)
+3. 添加"🖼 贴图海生物"按钮和3x2网格选择界面
+4. 实现addFishWithTexture()函数，支持从贴图创建新鱼
+5. 集成initTexturePreviews()预览系统，生成120x60缩略图
+6. 贴图鱼智能搭配不同形状轮廓(神仙鱼/旗鱼/长尾斗鱼)
+7. 保持完整渲染效果：轮廓裁剪、泳动微波、顶光腹影
+8. 贴图鱼自动保存到本地存档，支持持久化存储
+
 2025-08-13 14:04
 1. 添加自定义鱼形轮廓支持
    - 新增UserOutline和UserFishSVG类型定义
@@ -9,3 +19,15 @@
 3. 优化代码结构
    - 保持与现有功能的兼容性
    - 确保旧存档不受影响
+
+2025-08-13 05:02:00 (UTC+9)
+1. 添加frameRef作为轮廓层画布
+2. 实现setupHiDPICanvas工具函数
+3. 修改形状切换逻辑，确保立即生效
+4. 更新裁剪和渲染逻辑，解决形状切换时虚线残留问题
+
+2025-08-13 04:52:00 (UTC+9)
+1. 在FishDesigner组件中添加remaskExistingDrawingToShape函数
+2. 修改onPointerDown函数，在按下时调用remaskExistingDrawingToShape
+3. 修改形状切换按钮的onClick处理，在切换形状后调用remaskExistingDrawingToShape
+4. 实现功能：当切换鱼形状时，自动将现有绘制内容重新裁剪到新形状轮廓内
