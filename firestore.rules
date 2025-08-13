@@ -1,0 +1,13 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /ponds/{pondId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /textures/{texId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+  }
+}

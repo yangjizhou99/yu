@@ -527,7 +527,6 @@ function toCloudPayload(): CloudSave {
   }
 
   async function resolveTexturesForFish() {
-    // localStorage 简易 LRU
     const TEX_LS_KEY = "texture-cache-v1";
     const texCacheGet = (id: string) => {
       try { return (JSON.parse(localStorage.getItem(TEX_LS_KEY) || "{}") as any)[id] || null; } catch { return null; }
@@ -557,8 +556,9 @@ function toCloudPayload(): CloudSave {
       }
     }
     const uniq = Array.from(new Set(need));
-    await Promise.all(uniq.map(async (id) => {
-      const url = await getTextureDataUrl(id);
+    const urls = await Promise.all(uniq.map(id => getTextureDataUrl(id)));
+    uniq.forEach((id, i) => {
+      const url = urls[i];
       if (!url) return;
       texCacheSet(id, url);
       for (const f of fishRef.current as any[]) {
@@ -568,8 +568,9 @@ function toCloudPayload(): CloudSave {
           texCacheRef.current.set(f.id, img);
         }
       }
-    }));
-    // 回填后把本地存档也更新一下（下次刷新更快）
+    });
+  
+    // 写回本地存档，让下次刷新更快
     scheduleSave();
   }
 
@@ -728,17 +729,17 @@ function toCloudPayload(): CloudSave {
     saveCloudNow();
   }
 
-  async function addFishWithTexture(texKey: TextureKey) {
-    const def = TEXTURE_PACK.find(d => d.key === texKey)!;
-    const dataUrl = def.make(256, 128);          // 生成正式贴图
-    
-    // 1) 计算哈希 → textures 集合里"若无则写入"
+  async function addFishFromDef(def: TextureDef) {
+    const dataUrl = def.make(256, 128);
+  
     const texId = await sha256Base64(dataUrl);
-    try { 
-      await putTextureIfAbsent(texId, dataUrl); 
-    } catch {} // 网络失败也不阻塞本地显示
-
-    // 2) 创建鱼：本地保持 dataUrl 立即显示；云端靠 textureId 引用
+    try {
+      await putTextureIfAbsent(texId, dataUrl);
+      console.log("[texture] stored:", texId);
+    } catch (e) {
+      console.warn("[texture] store fail:", e);
+    }
+  
     const rect = canvasRef.current!.getBoundingClientRect();
     const cam = camRef.current;
     const viewW = rect.width / cam.scale, viewH = rect.height / cam.scale;
@@ -759,23 +760,18 @@ function toCloudPayload(): CloudSave {
       targetFoodId: null,
       wanderT: rand(0, 1000),
       ownerName: undefined,
-      petName: def.label,            // 默认名字用贴图名，可改
-      textureDataUrl: dataUrl,       // 本地立即渲染
-      textureId: texId,              // 🔹 云端引用
-      shape: def.shape,              // ✅ 搭配轮廓
+      petName: def.label,
+      textureDataUrl: dataUrl,
+      textureId: texId,
+      shape: def.shape,
     };
-
     fishRef.current.push(f);
     setFishCount(fishRef.current.length);
-
-    // 纹理缓存
-    const img = new Image(); img.src = dataUrl;
-    texCacheRef.current.set(id, img);
-
+    const img = new Image(); img.src = dataUrl; texCacheRef.current.set(f.id, img);
+  
     scheduleSave();
-    localRevRef.current += 1;
-    saveLocalRev(pondId);
-    saveCloudNow();
+    localRevRef.current += 1; saveLocalRev(pondId);
+    await saveCloudNow();
   }
 
   function clearSaveAndReset(){
@@ -1027,7 +1023,7 @@ function toCloudPayload(): CloudSave {
               <div className="absolute right-0 mt-2 w-[360px] p-2 bg-white rounded-xl shadow-lg border grid grid-cols-3 gap-2 z-50">
                 {TEXTURE_PACK.map(t => (
                   <button key={t.key}
-                    onClick={() => { addFishWithTexture(t.key); setShowTexPicker(false); }}
+                    onClick={() => { addFishFromDef(t); setShowTexPicker(false); }}
                     className="group rounded-lg border hover:shadow-sm overflow-hidden text-xs">
                     <img src={t.preview} alt={t.label} className="w-full h-[60px] object-cover" />
                     <div className="px-2 py-1 text-center">{t.label}</div>
@@ -1079,13 +1075,16 @@ function toCloudPayload(): CloudSave {
           onCreate={async (ownerName, petName, dataUrl, shape) => {
             if (fishRef.current.length >= MAX_FISH_COUNT) { closeDesigner(); return; }
             
-            // 1) 计算哈希 → textures 集合里"若无则写入"
+            // 1) 计算哈希并把贴图写入 textures 集合（若已存在则跳过）
             const texId = await sha256Base64(dataUrl);
-            try { 
-              await putTextureIfAbsent(texId, dataUrl); 
-            } catch {} // 网络失败也不阻塞本地显示
+            try {
+              await putTextureIfAbsent(texId, dataUrl);
+              console.log("[texture] stored:", texId);
+            } catch (e) {
+              console.warn("[texture] store fail:", e);
+            }
 
-            // 2) 创建鱼：本地保持 dataUrl 立即显示；云端靠 textureId 引用
+            // 2) 创建鱼：本地立刻显示 dataUrl；云端靠 textureId 引用
             const rect = canvasRef.current!.getBoundingClientRect();
             const viewW = rect.width / camRef.current.scale;
             const viewH = rect.height / camRef.current.scale;
@@ -1104,18 +1103,20 @@ function toCloudPayload(): CloudSave {
               vision: FISH_VISION,
               targetFoodId: null,
               wanderT: rand(0, 1000),
-              ownerName, petName, 
-              textureDataUrl: dataUrl,  // 本地立即渲染
-              textureId: texId,         // 🔹 云端引用
+              ownerName, petName,
+              textureDataUrl: dataUrl,   // 立即可见
+              textureId: texId,          // 云端引用
               shape,
             };
             fishRef.current.push(f);
             setFishCount(fishRef.current.length);
-            if (dataUrl) { const img = new Image(); img.src = dataUrl; texCacheRef.current.set(id, img); }
+            // 缓存 image
+            const img = new Image(); img.src = dataUrl; texCacheRef.current.set(f.id, img);
+
+            // 3) 版本自增 + 立即写云（避免几秒后被回流覆盖）
             scheduleSave();
-            localRevRef.current += 1;
-            saveLocalRev(pondId);
-            saveCloudNow();
+            localRevRef.current += 1; saveLocalRev(pondId);
+            await saveCloudNow();
             closeDesigner();
           }}
         />
