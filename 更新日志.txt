@@ -1,3 +1,8 @@
+[2025-08-13] S6.2B-fix-2：补全“创建新鱼形”流程的贴图持久化
+- **问题定位**：发现通过“创建新鱼形” -> “绘制细节” (`DetailEditor`) 创建的鱼，其贴图没有被上传到 Firestore，导致刷新后图案丢失。
+- **核心修复**：为 `DetailEditor` 的 `onSave` 回调添加了与 `FishDesigner` 相同的贴图处理逻辑。现在，在保存用新轮廓绘制的鱼时，会先将其贴图 `dataUrl` 上传到 `textures` 集合，生成 `textureId`，然后才将带有 `textureId` 的鱼对象存入 `ponds` 集合。
+- **类型安全**：增加了空值检查，确保只有在成功生成贴图预览 (`previewPng`) 的情况下才执行上传和保存，修复了相关的 TypeScript 类型错误。
+
 [2025-08-13] S6.2B-fix：确保贴图入库与刷新后自动回填
 - **核心修复**：在创建自定义鱼 (`onCreate`) 和从预设创建鱼 (`addFishFromDef`) 时，强制先将贴图 `dataUrl` 上传到 Firestore 的 `textures` 集合中，再创建 `ponds` 集合中的鱼对象。这确保了 `textureId` 对应的贴图数据一定存在于云端。
 - **异步与即时保存**：将相关函数改造为 `async`，并使用 `await saveCloudNow()` 立即将变更写入云端，避免了因延迟写入导致的状态不一致，尤其是在刷新或多端同步时。

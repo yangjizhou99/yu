@@ -1135,10 +1135,26 @@ function toCloudPayload(): CloudSave {
       {detailEditorOpen && currentOutline && (
         <DetailEditor
           outline={currentOutline}
-          onSave={(svg) => {
+          onSave={async (svg) => {
             closeDetailEditor();
             if (fishRef.current.length >= MAX_FISH_COUNT) return;
+
+            const dataUrl = svg.previewPng;
+            if (!dataUrl) {
+              console.warn("No previewPng to save from detail editor.");
+              return;
+            }
+
+            // 1) 上传贴图并获取 ID
+            const texId = await sha256Base64(dataUrl);
+            try {
+              await putTextureIfAbsent(texId, dataUrl);
+              console.log("[texture] stored from detail editor:", texId);
+            } catch (e) {
+              console.warn("[texture] store fail from detail editor:", e);
+            }
             
+            // 2) 创建鱼对象
             const rect = canvasRef.current!.getBoundingClientRect();
             const viewW = rect.width / camRef.current.scale;
             const viewH = rect.height / camRef.current.scale;
@@ -1160,18 +1176,20 @@ function toCloudPayload(): CloudSave {
               wanderT: rand(0, 1000),
               shapeKey: `custom:${currentOutline!.id}`,
               textureSvg: svg.svgText,
-              textureDataUrl: svg.previewPng,
-              shape: "angelfish" // 使用默认形状作为占位
+              textureDataUrl: dataUrl,
+              textureId: texId, // ✅ 关联贴图 ID
+              shape: "angelfish"
             };
             
             fishRef.current.push(f);
             setFishCount(fishRef.current.length);
-            if (svg.previewPng) {
-              const img = new Image();
-              img.src = svg.previewPng;
-              texCacheRef.current.set(id, img);
-            }
+            const img = new Image(); img.src = dataUrl;
+            texCacheRef.current.set(id, img);
+            
+            // 3) 立即保存到云
             scheduleSave();
+            localRevRef.current += 1; saveLocalRev(pondId);
+            await saveCloudNow();
           }}
           onBack={() => {
             closeDetailEditor();
