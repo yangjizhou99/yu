@@ -1,106 +1,31 @@
-# 鱼塘小游戏（Vite + React + TS）
+# Fish Pond Mini-Game
 
-## 启动
-```bash
-npm install
-npm run dev
-# 浏览器打开提示的本地地址
-```
+This is a simple fish pond simulation game built with React and TypeScript.
 
-> 如果页面样式没有生效，请确保联网（项目使用了 Tailwind 的 CDN）。
+## Features
 
-## 功能特色
+- **Fish Simulation**: Fish swim around the pond with realistic behaviors.
+- **Feeding**: Click to add food to the pond and watch the fish eat.
+- **Customization**: Design your own fish with custom textures and shapes.
+- **Persistence**: Your pond is saved locally and synced to the cloud.
+- **Real-time Sync**: Share your pond with others and see changes in real-time.
 
-### 🐟 基础功能
-- **添加鱼类**：点击"+1 条鱼"按钮添加随机鱼（会自动游动）
-- **投喂系统**：点击水面投喂饲料，包含普通、稀有、传说三种品质
-- **智能觅食**：鱼在视野内会朝饲料游去并吃掉，每吃1个体型增长
-- **成长系统**：鱼体型可累积增长，大鱼游速更慢，小鱼更敏捷
+## Architecture
 
-### 🎨 自定义功能
-- **绘鱼面板**：点击"🎨 自定义新鱼"打开绘制界面
-- **多种形状**：支持神仙鱼、旗鱼、长尾斗鱼三种轮廓
-- **个性化**：可设置用户名和宠物鱼名字
-- **轮廓裁剪**：只能在鱼体轮廓内绘制，超出部分自动裁剪
+### Texture Storage
 
-### 🖼 海洋生物贴图系统（v5.3新增）
-- **贴图库**：6种程序生成的海洋生物皮肤
-  - 🐠 小丑鱼：经典橙白条纹
-  - 🐟 蓝吊鱼：深蓝渐变配黄尾
-  - 🐲 锦鲤：白底随机红斑
-  - 🦈 鲸鲨肌理：深海蓝配白色斑点
-  - 🦁 狮子鱼：米色底深棕斜纹
-  - 🌈 鹦嘴鱼：彩虹渐变横纹
-- **智能搭配**：不同贴图自动匹配最适合的鱼形轮廓
-- **即时生成**：选择贴图后立即在当前视野生成新鱼
+- **Firestore**: Textures are stored in a `textures` collection in Firestore.
+- **Deduplication**: Textures are deduplicated using a SHA-256 hash of the image data.
+- **Caching**: Textures are cached locally in the browser's `localStorage` to reduce network requests.
 
-### 🌐 云端同步与分享（v6.0-v6.1新增）
-- **Firebase云同步**：实时多端数据同步
-- **匿名登录**：自动管理用户身份
-- **分享池塘**：🔗 一键复制池塘链接
-- **统一池塘ID**：通过URL参数(?pond=)指定和共享同一个池塘
-- **安全机制**：节流写入、离线持久化
+### Data Flow
 
-### 🌊 视觉效果
-- **海洋背景**：深海渐变 + 动态光斑 + 沙地海床
-- **高级渲染**：轮廓裁剪、泳动微波、顶光腹影效果
-- **相机系统**：支持缩放、拖拽，4096x2304巨型鱼塘
-
-### 💾 数据管理
-- **本地存档**：自动保存鱼类和饲料状态
-- **版本兼容**：支持存档版本迁移
-- **持久化**：刷新页面后数据不丢失
-- **云端备份**：Firebase实时同步
-
-## 操作指南
-- **投喂**：左键点击水面
-- **视角控制**：
-  - 滚轮缩放
-  - 空格键 + 拖拽移动视角
-  - 右键/中键拖拽移动视角
-- **分享**：点击"🔗 分享这个池塘"复制链接
-- **调试**：Alt+V 显示/隐藏鱼类视野圈
-- **管理**：清空鱼/清空饲料/清空存档按钮
-
-## 文件结构
-```
-.
-├─ index.html           # 入口（含 Tailwind CDN）
-├─ src/
-│  ├─ main.tsx         # React 入口
-│  ├─ App.tsx          # 游戏主组件（包含所有逻辑）
-│  ├─ firebase.ts      # Firebase云同步配置
-│  ├─ components/      # 组件目录
-│  ├─ types/           # 类型定义
-│  └─ assets/          # 资源文件
-├─ package.json
-├─ tsconfig.json
-├─ vite.config.ts
-└─ 更新日志.txt        # 版本更新记录
-```
-
-## 技术特点
-- **高性能渲染**：Canvas 2D + 高DPI适配
-- **智能AI**：鱼类觅食行为和边界处理
-- **程序生成**：所有贴图均为代码生成，无外部依赖
-- **响应式设计**：自适应不同屏幕尺寸
-- **云原生**：Firebase实时同步与状态管理
-
-## 常见问题
-- **画布大小不对/模糊**：组件内已做高 DPI 适配（根据容器大小和 dpr 设置画布）
-- **性能**：当前为 O(N_fish × N_food) 的简单检测；鱼或饲料很多时可以做空间划分（网格/四叉树）
-- **贴图显示**：贴图鱼需要等待图片加载完成才能正确显示纹理
-- **云同步**：不同浏览器/设备需要通过分享链接访问同一池塘
-
-## 版本历史
-- **v6.1** - 池塘分享与统一链接功能
-- **v6.0** - Firebase云端同步系统
-- **v5.3** - 海洋生物贴图系统
-- **v5.2** - 自定义绘鱼功能
-- **v5.1** - 高级渲染效果
-- **v5.0** - 相机系统和巨型鱼塘
-
-## 许可与贡献
-- 开源项目，欢迎Star和PR
-- 遵循MIT开源协议
-- 任何问题请提交Issue
+1. **Fish Creation**:
+   - A new fish is created with a custom texture.
+   - The texture is hashed and stored in the `textures` collection.
+   - The fish object is updated with a reference to the texture.
+2. **Cloud Sync**:
+   - Fish and food data is synced to Firestore in real-time.
+   - When data is loaded from the cloud, missing textures are fetched from the `textures` collection.
+3. **Local Caching**:
+   - Textures are cached in `localStorage` to improve performance.

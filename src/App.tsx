@@ -3,7 +3,16 @@ import OutlineEditor from "./components/OutlineEditor";
 import DetailEditor from "./components/DetailEditor";
 import { UserOutline } from "./types/fish";
 // === Firestore 接入（S6.0） ===
-import { ensureAnonAuth, loadCloud, saveCloud, listenCloud, CloudSave } from "./firebase";
+import { 
+  ensureAnonAuth, 
+  loadCloud, 
+  saveCloud, 
+  listenCloud, 
+  CloudSave,
+  sha256Base64,
+  putTextureIfAbsent,
+  getTextureDataUrl
+} from "./firebase";
 
 // —— Fish Pond Mini-Game ————————————————————————————
 // S4.1：相机(缩放/拖拽) + 巨型鱼塘(4096x2304) + 降速成长 + 🎨自定义绘鱼 + 持久化 v3
@@ -86,6 +95,7 @@ interface Fish {
   id: number; x: number; y: number; vx: number; vy: number; speed: number;
   sizeScale: number; color: string; vision: number; targetFoodId: number|null; wanderT: number;
   ownerName?: string; petName?: string; textureDataUrl?: string;
+  textureId?: string; // 🔹 新：云端引用
   shape?: FishShape; // 新增形状字段
   shapeKey?: string; // 自定义轮廓标识 (builtin:xxx | custom:ol-123)
   textureSvg?: string; // 自定义SVG纹理
@@ -467,14 +477,14 @@ export default function App(){
   const cloudTimerRef = useRef<number | null>(null);
   const _ignoreNextCloud = useRef(false);
 
-  function toCloudPayload(): CloudSave {
-    // 轻量版：不把 base64 贴图传上云，避免文档过大/费用高
-    const fishLite = fishRef.current.map(f => {
-      const { textureDataUrl, ...rest } = f as any;
-      return rest;
-    });
-    return { cver: 1, nextId: nextIdRef.current, fish: fishLite, food: foodRef.current };
-  }
+function toCloudPayload(): CloudSave {
+  // 轻量版：不把 base64 贴图传上云，避免文档过大/费用高
+  const fishLite = fishRef.current.map(f => {
+    const { textureDataUrl, ...rest } = f as any;
+    return rest; // rest 中包含 textureId
+  });
+  return { cver: 1, nextId: nextIdRef.current, fish: fishLite, food: foodRef.current };
+}
 
   function scheduleCloudSave(ms = 1200) {
     if (cloudTimerRef.current != null) return;
@@ -574,17 +584,67 @@ export default function App(){
         }
       } catch (e) { console.warn("cloud init failed", e); }
 
-      // 2) 监听云端变更（他端修改时合并）
-      const un = listenCloud(pondId, (cloud) => {
-        if (_ignoreNextCloud.current) return; // 自己刚写过，忽略一次
-        // 简单策略：直接覆盖运行时状态（轻量）
-        fishRef.current = (cloud.fish ?? []) as any;
-        foodRef.current = (cloud.food ?? []);
-        nextIdRef.current = cloud.nextId ?? 1;
-        setFishCount(fishRef.current.length);
-        setFoodCount(foodRef.current.length);
-        scheduleSave(); // 写回本地
-      });
+        // 2) 监听云端变更（他端修改时合并）
+        const un = listenCloud(pondId, async (cloud) => {
+          if (_ignoreNextCloud.current) return; // 自己刚写过，忽略一次
+          // 简单策略：直接覆盖运行时状态（轻量）
+          fishRef.current = (cloud.fish ?? []) as any;
+          foodRef.current = (cloud.food ?? []);
+          nextIdRef.current = cloud.nextId ?? 1;
+          setFishCount(fishRef.current.length);
+          setFoodCount(foodRef.current.length);
+          scheduleSave(); // 写回本地
+
+          // —— 补齐贴图：优先本地缓存，其次 Firestore textures —— //
+          const TEX_LS_KEY = "texture-cache-v1";
+
+          // 简单本地缓存（localStorage）
+          function texCacheGet(id: string): string | null {
+            try { const m = JSON.parse(localStorage.getItem(TEX_LS_KEY) || "{}"); return m[id] || null; } catch { return null; }
+          }
+          function texCacheSet(id: string, url: string) {
+            try {
+              const m = JSON.parse(localStorage.getItem(TEX_LS_KEY) || "{}");
+              m[id] = url;
+              const keys = Object.keys(m);
+              if (keys.length > 60) delete m[keys[0]]; // 限 60 张，避免过大
+              localStorage.setItem(TEX_LS_KEY, JSON.stringify(m));
+            } catch {}
+          }
+
+          // 收集缺失的 textureId
+          const need: string[] = [];
+          for (const f of fishRef.current as any[]) {
+            if (f.textureDataUrl) continue;
+            if (f.textureId) {
+              const cached = texCacheGet(f.textureId);
+              if (cached) {
+                const img = new Image(); img.src = cached;
+                texCacheRef.current.set(f.id, img);
+                f.textureDataUrl = cached; // 让渲染立即可用
+              } else {
+                need.push(f.textureId);
+              }
+            }
+          }
+          // 去重后批量读取 Firestore（一次次 getDoc）
+          const uniq = Array.from(new Set(need));
+          Promise.all(uniq.map(id => getTextureDataUrl(id))).then(urls => {
+            uniq.forEach((id, i) => {
+              const url = urls[i];
+              if (!url) return;
+              texCacheSet(id, url);
+              // 把用到这个 id 的所有鱼都补上
+              for (const f of fishRef.current as any[]) {
+                if (f.textureId === id && !f.textureDataUrl) {
+                  f.textureDataUrl = url;
+                  const img = new Image(); img.src = url;
+                  texCacheRef.current.set(f.id, img);
+                }
+              }
+            });
+          });
+        });
       return () => un();
     })();
   }, []);
@@ -618,10 +678,17 @@ export default function App(){
     fishRef.current.push(f); setFishCount(fishRef.current.length); scheduleSave(); scheduleCloudSave();
   }
 
-  function addFishWithTexture(texKey: TextureKey) {
+  async function addFishWithTexture(texKey: TextureKey) {
     const def = TEXTURE_PACK.find(d => d.key === texKey)!;
     const dataUrl = def.make(256, 128);          // 生成正式贴图
-    // —— 放在"当前视野"里，和 addFish() 一致 —— //
+    
+    // 1) 计算哈希 → textures 集合里"若无则写入"
+    const texId = await sha256Base64(dataUrl);
+    try { 
+      await putTextureIfAbsent(texId, dataUrl); 
+    } catch {} // 网络失败也不阻塞本地显示
+
+    // 2) 创建鱼：本地保持 dataUrl 立即显示；云端靠 textureId 引用
     const rect = canvasRef.current!.getBoundingClientRect();
     const cam = camRef.current;
     const viewW = rect.width / cam.scale, viewH = rect.height / cam.scale;
@@ -643,7 +710,8 @@ export default function App(){
       wanderT: rand(0, 1000),
       ownerName: undefined,
       petName: def.label,            // 默认名字用贴图名，可改
-      textureDataUrl: dataUrl,
+      textureDataUrl: dataUrl,       // 本地立即渲染
+      textureId: texId,              // 🔹 云端引用
       shape: def.shape,              // ✅ 搭配轮廓
     };
 
@@ -655,6 +723,7 @@ export default function App(){
     texCacheRef.current.set(id, img);
 
     scheduleSave();
+    scheduleCloudSave();  // 关键操作立即写
   }
 
   function clearSaveAndReset(){
@@ -941,9 +1010,16 @@ export default function App(){
       {designerOpen && (
         <FishDesigner
           onCancel={closeDesigner}
-          onCreate={(ownerName, petName, dataUrl, shape) => {
+          onCreate={async (ownerName, petName, dataUrl, shape) => {
             if (fishRef.current.length >= MAX_FISH_COUNT) { closeDesigner(); return; }
-            // 把新鱼放在"当前视野"里，方便立即看到
+            
+            // 1) 计算哈希 → textures 集合里"若无则写入"
+            const texId = await sha256Base64(dataUrl);
+            try { 
+              await putTextureIfAbsent(texId, dataUrl); 
+            } catch {} // 网络失败也不阻塞本地显示
+
+            // 2) 创建鱼：本地保持 dataUrl 立即显示；云端靠 textureId 引用
             const rect = canvasRef.current!.getBoundingClientRect();
             const viewW = rect.width / camRef.current.scale;
             const viewH = rect.height / camRef.current.scale;
@@ -962,13 +1038,16 @@ export default function App(){
               vision: FISH_VISION,
               targetFoodId: null,
               wanderT: rand(0, 1000),
-              ownerName, petName, textureDataUrl: dataUrl,
+              ownerName, petName, 
+              textureDataUrl: dataUrl,  // 本地立即渲染
+              textureId: texId,         // 🔹 云端引用
               shape,
             };
             fishRef.current.push(f);
             setFishCount(fishRef.current.length);
             if (dataUrl) { const img = new Image(); img.src = dataUrl; texCacheRef.current.set(id, img); }
             scheduleSave();
+            scheduleCloudSave();  // 关键操作立即写
             closeDesigner();
           }}
         />
