@@ -432,6 +432,20 @@ export default function App(){
   const fishRef = useRef<Fish[]>([]);
   const foodRef = useRef<Food[]>([]);
   const nextIdRef = useRef(1);
+
+  // === S6.2C: 版本号持久化 ===
+  const localRevRef = useRef(0);
+  const cloudRevRef = useRef(0);
+  const REV_KEY = (pondId: string) => `pond-rev:${pondId}`;
+
+  function loadLocalRev(pondId: string) {
+    const v = parseInt(localStorage.getItem(REV_KEY(pondId)) || "0", 10);
+    localRevRef.current = isNaN(v) ? 0 : v;
+  }
+  function saveLocalRev(pondId: string) {
+    localStorage.setItem(REV_KEY(pondId), String(localRevRef.current));
+  }
+
   const animRef = useRef<number|null>(null);
   const lastTimeRef = useRef<number|null>(null);
 
@@ -483,7 +497,13 @@ function toCloudPayload(): CloudSave {
     const { textureDataUrl, ...rest } = f as any;
     return rest; // rest 中包含 textureId
   });
-  return { cver: 1, nextId: nextIdRef.current, fish: fishLite, food: foodRef.current };
+  return { 
+    cver: 1, 
+    nextId: nextIdRef.current, 
+    fish: fishLite, 
+    food: foodRef.current,
+    docRev: localRevRef.current 
+  };
 }
 
   function scheduleCloudSave(ms = 1200) {
@@ -496,6 +516,61 @@ function toCloudPayload(): CloudSave {
         setTimeout(() => { _ignoreNextCloud.current = false; }, 300);
       } catch (e) { console.warn("saveCloud failed", e); }
     }, ms);
+  }
+
+  async function saveCloudNow() {
+    try {
+      _ignoreNextCloud.current = true;
+      await saveCloud(pondId, toCloudPayload());
+      setTimeout(() => { _ignoreNextCloud.current = false; }, 300);
+    } catch (e) { console.warn("saveCloudNow failed", e); }
+  }
+
+  async function resolveTexturesForFish() {
+    // localStorage 简易 LRU
+    const TEX_LS_KEY = "texture-cache-v1";
+    const texCacheGet = (id: string) => {
+      try { return (JSON.parse(localStorage.getItem(TEX_LS_KEY) || "{}") as any)[id] || null; } catch { return null; }
+    };
+    const texCacheSet = (id: string, url: string) => {
+      try {
+        const m = JSON.parse(localStorage.getItem(TEX_LS_KEY) || "{}");
+        m[id] = url;
+        const keys = Object.keys(m);
+        if (keys.length > 60) delete m[keys[0]];
+        localStorage.setItem(TEX_LS_KEY, JSON.stringify(m));
+      } catch {}
+    };
+  
+    const need: string[] = [];
+    for (const f of fishRef.current as any[]) {
+      if (f.textureDataUrl) continue;
+      if (f.textureId) {
+        const cached = texCacheGet(f.textureId);
+        if (cached) {
+          f.textureDataUrl = cached;
+          const img = new Image(); img.src = cached;
+          texCacheRef.current.set(f.id, img);
+        } else {
+          need.push(f.textureId);
+        }
+      }
+    }
+    const uniq = Array.from(new Set(need));
+    await Promise.all(uniq.map(async (id) => {
+      const url = await getTextureDataUrl(id);
+      if (!url) return;
+      texCacheSet(id, url);
+      for (const f of fishRef.current as any[]) {
+        if (f.textureId === id && !f.textureDataUrl) {
+          f.textureDataUrl = url;
+          const img = new Image(); img.src = url;
+          texCacheRef.current.set(f.id, img);
+        }
+      }
+    }));
+    // 回填后把本地存档也更新一下（下次刷新更快）
+    scheduleSave();
   }
 
   // 迁移
@@ -535,6 +610,9 @@ function toCloudPayload(): CloudSave {
   // 初始化贴图预览
   useEffect(() => { initTexturePreviews(); }, []);
 
+  // 初始化时读取版本号
+  useEffect(() => { loadLocalRev(pondId); }, []);
+
   // 加载存档
   useEffect(()=>{
     resizeCanvas();
@@ -558,93 +636,60 @@ function toCloudPayload(): CloudSave {
     return ()=>{ window.removeEventListener("beforeunload", onBeforeUnload); document.removeEventListener("visibilitychange", onVisibility); };
   },[]);
 
-  // === S6.0：登录匿名账号 + 云端同步（轻量） ===
+  // === S6.2C: 云同步与持久化 ===
   useEffect(() => {
     (async () => {
-      const uid = await ensureAnonAuth();  // 匿名登录
+      const uid = await ensureAnonAuth();
       console.log("Firebase anon uid:", uid);
 
-      // 1) 初次拉取云数据（若存在），与本地择优合并（谁新用谁）
-      try {
-        const cloud = await loadCloud(pondId);
-        const localSavedAt = loadFromStorage()?.savedAt ? new Date(loadFromStorage()!.savedAt).getTime() : 0;
-        const cloudTime = (cloud as any)?.updatedAt?.toMillis?.() ?? 0;
+      // B) 启动流程：先读云端，云端存在就用云端；不存在才用本地自举
+      const cloud = await loadCloud(pondId);
+      if (cloud) {
+        // 采用云端：只有这条路径能覆盖本地
+        fishRef.current = (cloud.fish ?? []) as any;
+        foodRef.current = (cloud.food ?? []);
+        nextIdRef.current = cloud.nextId ?? 1;
 
-        if (cloud && cloudTime > localSavedAt) {
-          // 用云端覆盖本地（轻量版：不含 textureDataUrl）
-          fishRef.current = (cloud.fish ?? []).map((f: any) => ({ ...f })) as any;
-          foodRef.current = (cloud.food ?? []).map((fd: any) => ({ ...fd }));
-          nextIdRef.current = cloud.nextId ?? 1;
-          setFishCount(fishRef.current.length);
-          setFoodCount(foodRef.current.length);
-          scheduleSave(); // 同步回本地存档 v3
-        } else {
-          // 本地更新云端（轻量）
-          scheduleCloudSave(800);
-        }
-      } catch (e) { console.warn("cloud init failed", e); }
+        setFishCount(fishRef.current.length);
+        setFoodCount(foodRef.current.length);
 
-        // 2) 监听云端变更（他端修改时合并）
-        const un = listenCloud(pondId, async (cloud) => {
-          if (_ignoreNextCloud.current) return; // 自己刚写过，忽略一次
-          // 简单策略：直接覆盖运行时状态（轻量）
-          fishRef.current = (cloud.fish ?? []) as any;
-          foodRef.current = (cloud.food ?? []);
-          nextIdRef.current = cloud.nextId ?? 1;
-          setFishCount(fishRef.current.length);
-          setFoodCount(foodRef.current.length);
-          scheduleSave(); // 写回本地
+        cloudRevRef.current = cloud.docRev ?? 0;
+        localRevRef.current = cloudRevRef.current; // 本地版本跟齐云端
+        saveLocalRev(pondId);
 
-          // —— 补齐贴图：优先本地缓存，其次 Firestore textures —— //
-          const TEX_LS_KEY = "texture-cache-v1";
+        scheduleSave();               // 回写本地 v3
+        await resolveTexturesForFish(); // 贴图回填
+      } else {
+        // 云端不存在 → 用本地自举（首次建立文档）
+        // 把当前运行态（可能来自本地存档）直接写上云
+        localRevRef.current += 1;
+        saveLocalRev(pondId);
+        await saveCloudNow(); // 立即建文档
+      }
 
-          // 简单本地缓存（localStorage）
-          function texCacheGet(id: string): string | null {
-            try { const m = JSON.parse(localStorage.getItem(TEX_LS_KEY) || "{}"); return m[id] || null; } catch { return null; }
-          }
-          function texCacheSet(id: string, url: string) {
-            try {
-              const m = JSON.parse(localStorage.getItem(TEX_LS_KEY) || "{}");
-              m[id] = url;
-              const keys = Object.keys(m);
-              if (keys.length > 60) delete m[keys[0]]; // 限 60 张，避免过大
-              localStorage.setItem(TEX_LS_KEY, JSON.stringify(m));
-            } catch {}
-          }
+      // C) 监听回流：只接受新版本，旧版本直接忽略
+      const un = listenCloud(pondId, async (cloud) => {
+        if (_ignoreNextCloud.current) return;
 
-          // 收集缺失的 textureId
-          const need: string[] = [];
-          for (const f of fishRef.current as any[]) {
-            if (f.textureDataUrl) continue;
-            if (f.textureId) {
-              const cached = texCacheGet(f.textureId);
-              if (cached) {
-                const img = new Image(); img.src = cached;
-                texCacheRef.current.set(f.id, img);
-                f.textureDataUrl = cached; // 让渲染立即可用
-              } else {
-                need.push(f.textureId);
-              }
-            }
-          }
-          // 去重后批量读取 Firestore（一次次 getDoc）
-          const uniq = Array.from(new Set(need));
-          Promise.all(uniq.map(id => getTextureDataUrl(id))).then(urls => {
-            uniq.forEach((id, i) => {
-              const url = urls[i];
-              if (!url) return;
-              texCacheSet(id, url);
-              // 把用到这个 id 的所有鱼都补上
-              for (const f of fishRef.current as any[]) {
-                if (f.textureId === id && !f.textureDataUrl) {
-                  f.textureDataUrl = url;
-                  const img = new Image(); img.src = url;
-                  texCacheRef.current.set(f.id, img);
-                }
-              }
-            });
-          });
-        });
+        const rev = cloud.docRev ?? 0;
+        cloudRevRef.current = rev;
+
+        // 旧回流（<= 本地已知版本）全部丢弃
+        if (rev <= localRevRef.current) return;
+
+        // 新版本 → 接受并替换
+        fishRef.current = (cloud.fish ?? []) as any;
+        foodRef.current = (cloud.food ?? []);
+        nextIdRef.current = cloud.nextId ?? 1;
+
+        setFishCount(fishRef.current.length);
+        setFoodCount(foodRef.current.length);
+
+        localRevRef.current = rev;
+        saveLocalRev(pondId);
+        scheduleSave();                 // 本地存档
+        await resolveTexturesForFish(); // 贴图回填
+      });
       return () => un();
     })();
   }, []);
@@ -675,7 +720,12 @@ function toCloudPayload(): CloudSave {
     const f:Fish={ id, x:rand(cam.x+40,cam.x+viewW-40), y:rand(cam.y+40,cam.y+viewH-40),
       vx:Math.cos(angle)*spd, vy:Math.sin(angle)*spd, speed:spd, sizeScale:rand(0.9,1.1),
       color:randomFishColor(), vision:FISH_VISION, targetFoodId:null, wanderT:rand(0,1000) };
-    fishRef.current.push(f); setFishCount(fishRef.current.length); scheduleSave(); scheduleCloudSave();
+    fishRef.current.push(f);
+    setFishCount(fishRef.current.length);
+    scheduleSave();
+    localRevRef.current += 1;
+    saveLocalRev(pondId);
+    saveCloudNow();
   }
 
   async function addFishWithTexture(texKey: TextureKey) {
@@ -723,13 +773,19 @@ function toCloudPayload(): CloudSave {
     texCacheRef.current.set(id, img);
 
     scheduleSave();
-    scheduleCloudSave();  // 关键操作立即写
+    localRevRef.current += 1;
+    saveLocalRev(pondId);
+    saveCloudNow();
   }
 
   function clearSaveAndReset(){
     try{localStorage.removeItem(STORAGE_KEY_V3);}catch{}
     fishRef.current=[]; foodRef.current=[]; nextIdRef.current=1;
-    setFishCount(0); setFoodCount(0); texCacheRef.current.clear(); scheduleSave(); scheduleCloudSave();
+    setFishCount(0); setFoodCount(0); texCacheRef.current.clear();
+    scheduleSave();
+    localRevRef.current += 1;
+    saveLocalRev(pondId);
+    saveCloudNow();
   }
 
   // —— 交互：投喂 / 拖拽 / 缩放 —— //
@@ -761,7 +817,12 @@ function toCloudPayload(): CloudSave {
     // 左键点击投喂（世界坐标）
     const wpos=screenToWorld(sx,sy); const id=nextIdRef.current++; const v=pickFoodVariant();
     foodRef.current.push({id,x:clamp(wpos.x,0,WORLD_W),y:clamp(wpos.y,0,WORLD_H),r:v.radius,kind:v.kind,growPct:v.growPct});
-    setFoodCount(foodRef.current.length); scheduleSave(); scheduleCloudSave(); (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId);
+    setFoodCount(foodRef.current.length);
+    scheduleSave();
+    localRevRef.current += 1;
+    saveLocalRev(pondId);
+    saveCloudNow();
+    (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId);
   }
   function onWheel(e:React.WheelEvent<HTMLCanvasElement>){
     const rect=(e.target as HTMLCanvasElement).getBoundingClientRect();
@@ -823,7 +884,12 @@ function toCloudPayload(): CloudSave {
           }
         }
       }
-      if(ate) { scheduleSave(); scheduleCloudSave(); }
+      if(ate) {
+        scheduleSave();
+        localRevRef.current += 1;
+        saveLocalRev(pondId);
+        scheduleCloudSave(1200);
+      }
       setFoodCount(foods.length);
 
       // 绘制鱼
@@ -973,8 +1039,8 @@ function toCloudPayload(): CloudSave {
 
           <button onClick={openDesigner} className="px-3 py-1.5 rounded-2xl shadow-sm bg-violet-500 text-white hover:bg-violet-600 active:scale-[0.98]">🎨 自定义新鱼</button>
           <button onClick={openOutlineEditor} className="px-3 py-1.5 rounded-2xl shadow-sm bg-emerald-500 text-white hover:bg-emerald-600 active:scale-[0.98]">🎯 创建新鱼形（两步）</button>
-          <button onClick={()=>{ fishRef.current=[]; setFishCount(0); scheduleSave(); scheduleCloudSave(); }} className="px-3 py-1.5 rounded-2xl bg-slate-200 hover:bg-slate-300">清空鱼</button>
-          <button onClick={()=>{ foodRef.current=[]; setFoodCount(0); scheduleSave(); scheduleCloudSave(); }} className="px-3 py-1.5 rounded-2xl bg-amber-200 hover:bg-amber-300">清空饲料</button>
+          <button onClick={()=>{ fishRef.current=[]; setFishCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-slate-200 hover:bg-slate-300">清空鱼</button>
+          <button onClick={()=>{ foodRef.current=[]; setFoodCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-amber-200 hover:bg-amber-300">清空饲料</button>
           <button
             onClick={() => {
               const base = (import.meta as any).env.BASE_URL || "/";
@@ -1047,7 +1113,9 @@ function toCloudPayload(): CloudSave {
             setFishCount(fishRef.current.length);
             if (dataUrl) { const img = new Image(); img.src = dataUrl; texCacheRef.current.set(id, img); }
             scheduleSave();
-            scheduleCloudSave();  // 关键操作立即写
+            localRevRef.current += 1;
+            saveLocalRev(pondId);
+            saveCloudNow();
             closeDesigner();
           }}
         />

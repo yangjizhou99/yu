@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";
-import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, serverTimestamp, onSnapshot } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 // Your web app's Firebase configuration
@@ -30,6 +30,7 @@ export type CloudSave = {
   nextId: number;
   fish: any[];
   food: any[];
+  docRev?: number;
 };
 
 const pondDocRef = (id: string) => doc(db, "ponds", id);
@@ -44,7 +45,12 @@ export async function saveCloud(pondId: string, data: CloudSave) {
 }
 
 export function listenCloud(pondId: string, callback: (data: CloudSave) => void) {
-  // ... existing implementation ...
+  const unsub = onSnapshot(pondDocRef(pondId), (doc) => {
+    if (doc.exists()) {
+      callback(doc.data() as CloudSave);
+    }
+  });
+  return unsub;
 }
 
 // —— 新增：贴图存储工具 —— //
