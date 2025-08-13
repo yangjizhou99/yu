@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import OutlineEditor from "./components/OutlineEditor";
 import DetailEditor from "./components/DetailEditor";
-import { UserOutline } from "./types/fish";
+import PublishNewFish from "./components/PublishNewFish";
+import { UserOutline, CreationDraft } from "./types/fish";
 
 // —— Fish Pond Mini-Game ————————————————————————————
 // S4.1：相机(缩放/拖拽) + 巨型鱼塘(4096x2304) + 降速成长 + 🎨自定义绘鱼 + 持久化 v3
@@ -51,6 +52,47 @@ type SaveDataV1 = {
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 function pickFoodVariant() { const r = Math.random(); let acc = 0; for (const v of FOOD_VARIANTS){ acc+=v.prob; if(r<=acc) return v; } return FOOD_VARIANTS[FOOD_VARIANTS.length - 1]!; }
+
+function publishDraftToPond(
+  draft: CreationDraft, 
+  ownerName: string, 
+  petName: string,
+  canvasRef: React.RefObject<HTMLCanvasElement>,
+  fishRef: React.MutableRefObject<Fish[]>,
+  nextIdRef: React.MutableRefObject<number>,
+  setFishCount: React.Dispatch<React.SetStateAction<number>>,
+  scheduleSave: () => void
+) {
+  const cvs = canvasRef.current!;
+  const w = parseInt(cvs.style.width || "800", 10);
+  const h = parseInt(cvs.style.height || "500", 10);
+  const angle = rand(0, Math.PI * 2);
+  const spd = rand(FISH_SPEED_MIN, FISH_SPEED_MAX);
+  const id = nextIdRef.current++;
+
+  const f: Fish = {
+    id,
+    x: rand(40, w - 40),
+    y: rand(40, h - 40),
+    vx: Math.cos(angle) * spd,
+    vy: Math.sin(angle) * spd,
+    speed: spd,
+    sizeScale: 1.0,
+    color: randomFishColor(),
+    vision: FISH_VISION,
+    targetFoodId: null,
+    wanderT: rand(0, 1000),
+    ownerName, 
+    petName,
+    textureDataUrl: draft.previewPng,
+    textureSvg: draft.svgText,
+    shapeKey: `custom:${draft.outlineId}`,
+  };
+
+  fishRef.current.push(f);
+  setFishCount(fishRef.current.length);
+  scheduleSave();
+}
 
 // ====== 类型 ======
 interface Food { id: number; x: number; y: number; r: number; kind: FoodKind; growPct: number; }
@@ -267,6 +309,7 @@ export default function App(){
   const [designerOpen, setDesignerOpen] = useState(false);
   const [outlineEditorOpen, setOutlineEditorOpen] = useState(false);
   const [detailEditorOpen, setDetailEditorOpen] = useState(false);
+  const [publishNewFishOpen, setPublishNewFishOpen] = useState(false);
   const [currentOutline, setCurrentOutline] = useState<UserOutline | null>(null);
 
   const openDesigner = () => setDesignerOpen(true);
@@ -278,6 +321,8 @@ export default function App(){
     setDetailEditorOpen(true);
   };
   const closeDetailEditor = () => setDetailEditorOpen(false);
+  const openPublishNewFish = () => setPublishNewFishOpen(true);
+  const closePublishNewFish = () => setPublishNewFishOpen(false);
 
   // 存档：节流保存
   const dirtyRef = useRef(false); const saveTimerRef = useRef<number|null>(null);
@@ -372,11 +417,11 @@ export default function App(){
     fishRef.current.push(f); setFishCount(fishRef.current.length); scheduleSave();
   }
 
-  function clearSaveAndReset(){
-    try{localStorage.removeItem(STORAGE_KEY_V3);}catch{}
-    fishRef.current=[]; foodRef.current=[]; nextIdRef.current=1;
-    setFishCount(0); setFoodCount(0); texCacheRef.current.clear(); scheduleSave();
-  }
+function clearSaveAndReset(){
+  try{localStorage.removeItem(STORAGE_KEY_V3);}catch{}
+  fishRef.current=[]; foodRef.current=[]; nextIdRef.current=1;
+  setFishCount(0); setFoodCount(0); texCacheRef.current.clear(); scheduleSave();
+}
 
   // —— 交互：投喂 / 拖拽 / 缩放 —— //
   function onPointerDown(e:React.PointerEvent<HTMLCanvasElement>){
@@ -672,45 +717,39 @@ export default function App(){
           outline={currentOutline}
           onSave={(svg) => {
             closeDetailEditor();
-            if (fishRef.current.length >= MAX_FISH_COUNT) return;
-            
-            const rect = canvasRef.current!.getBoundingClientRect();
-            const viewW = rect.width / camRef.current.scale;
-            const viewH = rect.height / camRef.current.scale;
-            const angle = rand(0, Math.PI * 2);
-            const spd = rand(FISH_SPEED_MIN, FISH_SPEED_MAX);
-            const id = nextIdRef.current++;
-            
-            const f: Fish = {
-              id,
-              x: rand(camRef.current.x + 40, camRef.current.x + viewW - 40),
-              y: rand(camRef.current.y + 40, camRef.current.y + viewH - 40),
-              vx: Math.cos(angle) * spd,
-              vy: Math.sin(angle) * spd,
-              speed: spd,
-              sizeScale: 1.0,
-              color: randomFishColor(),
-              vision: FISH_VISION,
-              targetFoodId: null,
-              wanderT: rand(0, 1000),
-              shapeKey: `custom:${currentOutline!.id}`,
-              textureSvg: svg.svgText,
-              textureDataUrl: svg.previewPng,
-              shape: "angelfish" // 使用默认形状作为占位
-            };
-            
-            fishRef.current.push(f);
-            setFishCount(fishRef.current.length);
-            if (svg.previewPng) {
-              const img = new Image();
-              img.src = svg.previewPng;
-              texCacheRef.current.set(id, img);
-            }
-            scheduleSave();
+            // 不再直接发布到鱼塘，而是跳转到 Step3
+          }}
+          onNext={() => {
+            closeDetailEditor();
+            openPublishNewFish();
           }}
           onBack={() => {
             closeDetailEditor();
             openOutlineEditor();
+          }}
+        />
+      )}
+      
+      {publishNewFishOpen && (
+        <PublishNewFish
+          onClose={closePublishNewFish}
+          onPublish={(draft, ownerName, petName) => {
+            if (fishRef.current.length >= MAX_FISH_COUNT) {
+              closePublishNewFish();
+              return;
+            }
+            
+            publishDraftToPond(
+              draft,
+              ownerName,
+              petName,
+              canvasRef,
+              fishRef,
+              nextIdRef,
+              setFishCount,
+              scheduleSave
+            );
+            closePublishNewFish();
           }}
         />
       )}

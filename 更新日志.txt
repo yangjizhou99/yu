@@ -9,3 +9,25 @@
 3. 优化代码结构
    - 保持与现有功能的兼容性
    - 确保旧存档不受影响
+
+2025-08-13 14:25
+S6.1 完整三步向导功能实现完成
+1. 完善PublishNewFish组件
+   - 修复导入错误，改为接收onPublish回调
+   - 添加完整的Tailwind CSS样式
+   - 实现预览区域和表单验证
+   - 支持草稿数据加载和清理
+2. 完善DetailEditor组件
+   - 添加onNext属性支持Step2→Step3跳转
+   - 在handleSave函数中添加草稿保存逻辑
+   - 使用CreationDraft类型保存完整的轮廓和SVG数据
+3. 集成App.tsx主应用
+   - 添加publishNewFishOpen状态管理
+   - 集成PublishNewFish组件到主界面
+   - 修改DetailEditor的onNext回调实现跳转
+   - 完善publishDraftToPond函数调用逻辑
+4. 功能特性
+   - 实现完整的"轮廓→细化→发布"三步流程
+   - 支持草稿在sessionStorage中的临时存储
+   - 保持与现有自定义绘鱼功能的兼容性
+   - 优化用户体验，提供清晰的步骤指引

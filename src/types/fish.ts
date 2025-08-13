@@ -18,6 +18,39 @@ export type UserFishSVG = {
   createdAt: string;
 };
 
+export type CreationDraft = {
+  outlineId: string;
+  outlineName: string;
+  viewBox: { w:number; h:number };
+  pathD: string;
+  headIsLeft: boolean;
+  svgId: string;
+  svgName: string;
+  svgText: string;
+  previewPng: string;
+};
+
+const DRAFT_KEY = "fish-creator-draft-v1";
+
+export function saveDraft(d: CreationDraft) {
+  sessionStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+}
+
+export function loadDraft(): CreationDraft | null {
+  try { 
+    const s = sessionStorage.getItem(DRAFT_KEY); 
+    return s ? JSON.parse(s) : null; 
+  } catch { 
+    return null; 
+  }
+}
+
+export function clearDraft() { 
+  try { 
+    sessionStorage.removeItem(DRAFT_KEY);
+  } catch {} 
+}
+
 // 存储键
 export const STORAGE_KEY_OUTLINE = "fish-outline-lib-v1";
 export const STORAGE_KEY_SVG = "fish-skin-lib-v1";

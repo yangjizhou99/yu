@@ -1,13 +1,14 @@
 import React, { useRef, useState, useEffect } from "react";
-import { UserOutline, UserFishSVG, pointsToOpenPathD, uuid, saveSvgLib, loadSvgLib } from "../types/fish";
+import { UserOutline, UserFishSVG, pointsToOpenPathD, uuid, saveSvgLib, loadSvgLib, saveDraft, CreationDraft } from "../types/fish";
 
 interface DetailEditorProps {
   outline: UserOutline;
   onSave: (svg: UserFishSVG) => void;
   onBack: () => void;
+  onNext: () => void;
 }
 
-export default function DetailEditor({ outline, onSave, onBack }: DetailEditorProps) {
+export default function DetailEditor({ outline, onSave, onBack, onNext }: DetailEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [strokes, setStrokes] = useState<Array<{color: string, width: number, pts: Array<{x: number, y: number}>}>>([]);
   const [currentStroke, setCurrentStroke] = useState<{color: string, width: number, pts: Array<{x: number, y: number}>} | null>(null);
@@ -202,7 +203,22 @@ export default function DetailEditor({ outline, onSave, onBack }: DetailEditorPr
     lib.push(svg);
     saveSvgLib(lib);
 
+    // 保存草稿到 sessionStorage，准备跳转到 Step3
+    const draft: CreationDraft = {
+      outlineId: outline.id,
+      outlineName: outline.name,
+      viewBox: outline.viewBox,
+      pathD: outline.pathD,
+      headIsLeft: outline.headIsLeft,
+      svgId: svg.id,
+      svgName: svg.name,
+      svgText: svg.svgText,
+      previewPng: svg.previewPng!
+    };
+    
+    saveDraft(draft);
     onSave(svg);
+    onNext(); // 跳转到 Step3
   };
 
   const COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#000000"];
