@@ -1,3 +1,10 @@
+[2025-08-13] S6.2B-fix-5：完成对所有云端数据的深度清洗
+- **问题定位**：经过最终排查，确认 `toCloudPayload` 函数在处理 `food` 数组时未进行白名单筛选，是 `undefined` 错误的最后来源。
+- **核心修复**：
+    1.  在 `toCloudPayload` 函数中，对 `foodRef.current` 数组进行 `map` 操作，确保 `food` 对象也像 `fish` 对象一样，只包含明确定义的、Firestore 兼容的字段。
+    2.  在 `firebase.ts` 的 `saveCloud` 函数中，为 `setDoc` 添加 `{ merge: true }` 选项，增强写入操作的健壮性。
+- **效果**：此修复补全了数据清洗的最后环节，确保了整个发送到 Firestore 的 `CloudSave` 对象都是完全干净的，从根本上杜绝了 `Unsupported field value: undefined` 错误。
+
 [2025-08-13] S6.2B-fix-4：修复 Firestore 不支持 undefined 字段值的问题
 - **问题定位**：发现 `saveCloudNow failed … Unsupported field value: undefined` 错误，原因是将带有 `undefined` 字段的鱼对象写入了 Firestore。
 - **核心修复**：

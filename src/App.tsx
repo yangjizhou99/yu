@@ -529,7 +529,10 @@ function toCloudPayload(): CloudSave {
     cver: 1,
     nextId: nextIdRef.current,
     fish: fishLite,
-    food: foodRef.current,
+    food: foodRef.current.map(fd => ({
+      id: fd.id, x: fd.x, y: fd.y, r: fd.r,
+      kind: fd.kind, growPct: fd.growPct
+    })),
     docRev: localRevRef.current
   };
 

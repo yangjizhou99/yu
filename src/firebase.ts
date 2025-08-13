@@ -56,7 +56,7 @@ function cleanForFirestore<T>(val: T): T {
 
 export async function saveCloud(pondId: string, data: CloudSave) {
   const safeData = cleanForFirestore({ ...data, updatedAt: serverTimestamp() });
-  await setDoc(pondDocRef(pondId), safeData);
+  await setDoc(pondDocRef(pondId), safeData, { merge: true });
 }
 
 export function listenCloud(pondId: string, callback: (data: CloudSave) => void) {
