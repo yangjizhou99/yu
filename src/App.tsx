@@ -36,15 +36,28 @@ const FOOD_VARIANTS = [
 // —— 存档（v3） ——
 const STORAGE_KEY_V3 = "fish-pond-save-v3";
 const POND_ID_KEY = "pond-id";
-function getOrCreatePondId() {
-  let id = localStorage.getItem(POND_ID_KEY);
-  if (!id) {
-    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    localStorage.setItem(POND_ID_KEY, id);
+
+function resolvePondId(): string {
+  const url = new URL(window.location.href);
+  // 1) URL 参数优先：?pond=xxxx 或 #pond=xxxx 都支持
+  const fromQuery = url.searchParams.get("pond");
+  const fromHash = (url.hash.match(/pond=([\w-]+)/) || [])[1];
+  const pidFromUrl = fromQuery || fromHash;
+  if (pidFromUrl) {
+    localStorage.setItem(POND_ID_KEY, pidFromUrl);
+    return pidFromUrl;
   }
-  return id;
+  // 2) 其次本地存档
+  const local = localStorage.getItem(POND_ID_KEY);
+  if (local) return local;
+  // 3) 没有则新建
+  const newId = (crypto.randomUUID?.() || (Math.random().toString(36).slice(2) + Date.now().toString(36)))
+                  .replace(/-/g, "").slice(0, 16);
+  localStorage.setItem(POND_ID_KEY, newId);
+  return newId;
 }
-const pondId = getOrCreatePondId();
+
+const pondId = resolvePondId();
 type SaveDataV3 = { version: 3; nextId: number; fish: Fish[]; food: Food[]; savedAt: string; };
 type SaveDataV2 = {
   version: 2; nextId: number;
@@ -893,6 +906,16 @@ export default function App(){
           <button onClick={openOutlineEditor} className="px-3 py-1.5 rounded-2xl shadow-sm bg-emerald-500 text-white hover:bg-emerald-600 active:scale-[0.98]">🎯 创建新鱼形（两步）</button>
           <button onClick={()=>{ fishRef.current=[]; setFishCount(0); scheduleSave(); scheduleCloudSave(); }} className="px-3 py-1.5 rounded-2xl bg-slate-200 hover:bg-slate-300">清空鱼</button>
           <button onClick={()=>{ foodRef.current=[]; setFoodCount(0); scheduleSave(); scheduleCloudSave(); }} className="px-3 py-1.5 rounded-2xl bg-amber-200 hover:bg-amber-300">清空饲料</button>
+          <button
+            onClick={() => {
+              const base = (import.meta as any).env.BASE_URL || "/";
+              const url = `${location.origin}${base}?pond=${pondId}`;
+              navigator.clipboard.writeText(url).then(() => alert("分享链接已复制到剪贴板"));
+            }}
+            className="px-3 py-1.5 rounded-2xl shadow-sm bg-emerald-500 text-white hover:bg-emerald-600"
+            title="复制当前池塘的分享链接"
+          >🔗 分享这个池塘</button>
+
           <button onClick={clearSaveAndReset} className="px-3 py-1.5 rounded-2xl bg-rose-200 hover:bg-rose-300">清空存档</button>
         </div>
       </div>
