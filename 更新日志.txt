@@ -1,3 +1,8 @@
+[2025-08-13] S6.2B-fix-3：修复 Firestore 权限问题与异步时序
+- **问题定位**：通过日志发现 `[texture] store fail: FirebaseError: Missing or insufficient permissions.` 错误，根本原因是尝试写入 Firestore 时，用户的匿名登录尚未完成。
+- **核心修复**：在所有创建带贴图的鱼的函数入口（`addFishFromDef`, `FishDesigner/onCreate`, `DetailEditor/onSave`）中，强制在执行 `putTextureIfAbsent` 之前调用并 `await ensureAnonAuth()`。
+- **效果**：此项修复确保了所有对 `textures` 集合的写操作都是在已认证（匿名）的状态下发出的，从而解决了权限不足的问题，保证了贴图数据能够成功存入云端。
+
 [2025-08-13] S6.2B-fix-2：补全“创建新鱼形”流程的贴图持久化
 - **问题定位**：发现通过“创建新鱼形” -> “绘制细节” (`DetailEditor`) 创建的鱼，其贴图没有被上传到 Firestore，导致刷新后图案丢失。
 - **核心修复**：为 `DetailEditor` 的 `onSave` 回调添加了与 `FishDesigner` 相同的贴图处理逻辑。现在，在保存用新轮廓绘制的鱼时，会先将其贴图 `dataUrl` 上传到 `textures` 集合，生成 `textureId`，然后才将带有 `textureId` 的鱼对象存入 `ponds` 集合。

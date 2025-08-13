@@ -732,6 +732,7 @@ function toCloudPayload(): CloudSave {
   async function addFishFromDef(def: TextureDef) {
     const dataUrl = def.make(256, 128);
   
+    await ensureAnonAuth(); // 确保已登录
     const texId = await sha256Base64(dataUrl);
     try {
       await putTextureIfAbsent(texId, dataUrl);
@@ -1075,6 +1076,7 @@ function toCloudPayload(): CloudSave {
           onCreate={async (ownerName, petName, dataUrl, shape) => {
             if (fishRef.current.length >= MAX_FISH_COUNT) { closeDesigner(); return; }
             
+            await ensureAnonAuth(); // 确保已登录
             // 1) 计算哈希并把贴图写入 textures 集合（若已存在则跳过）
             const texId = await sha256Base64(dataUrl);
             try {
@@ -1145,6 +1147,7 @@ function toCloudPayload(): CloudSave {
               return;
             }
 
+            await ensureAnonAuth(); // 确保已登录
             // 1) 上传贴图并获取 ID
             const texId = await sha256Base64(dataUrl);
             try {
