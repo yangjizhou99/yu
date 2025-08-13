@@ -40,8 +40,23 @@ export async function loadCloud(pondId: string): Promise<CloudSave | null> {
   return snap.exists() ? (snap.data() as CloudSave) : null;
 }
 
+function cleanForFirestore<T>(val: T): T {
+  if (Array.isArray(val)) return val.map(cleanForFirestore) as any;
+  if (val && typeof val === "object") {
+    const out: any = {};
+    for (const [k, v] of Object.entries(val as any)) {
+      if (v === undefined) continue;
+      out[k] = cleanForFirestore(v as any);
+    }
+    return out;
+  }
+  if (typeof val === "number" && Number.isNaN(val)) return null as any;
+  return val;
+}
+
 export async function saveCloud(pondId: string, data: CloudSave) {
-  await setDoc(pondDocRef(pondId), { ...data, updatedAt: serverTimestamp() });
+  const safeData = cleanForFirestore({ ...data, updatedAt: serverTimestamp() });
+  await setDoc(pondDocRef(pondId), safeData);
 }
 
 export function listenCloud(pondId: string, callback: (data: CloudSave) => void) {

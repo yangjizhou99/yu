@@ -1,3 +1,12 @@
+[2025-08-13] S6.2B-fix-4：修复 Firestore 不支持 undefined 字段值的问题
+- **问题定位**：发现 `saveCloudNow failed … Unsupported field value: undefined` 错误，原因是将带有 `undefined` 字段的鱼对象写入了 Firestore。
+- **核心修复**：
+    1.  **数据清洗**：添加了 `cleanForFirestore` 工具函数，用于递归移除对象中的 `undefined` 字段。
+    2.  **白名单上传**：重构了 `toCloudPayload` 函数，采用白名单模式显式指定要上传的字段，并使用 `?? null` 将所有可能为空的字段转换为 `null`。
+    3.  **类型统一**：修改了 `Fish` 接口，将所有可选字段的类型从 `T | undefined` 统一为 `T | null`，解决了因此产生的 TypeScript 类型错误。
+    4.  **双重保障**：在 `firebase.ts` 的 `saveCloud` 函数中也加入了数据清洗步骤，作为最后一道防线。
+- **效果**：此修复确保了所有写入 Firestore 的数据都符合其规范，彻底解决了云端保存失败的问题。
+
 [2025-08-13] S6.2B-fix-3：修复 Firestore 权限问题与异步时序
 - **问题定位**：通过日志发现 `[texture] store fail: FirebaseError: Missing or insufficient permissions.` 错误，根本原因是尝试写入 Firestore 时，用户的匿名登录尚未完成。
 - **核心修复**：在所有创建带贴图的鱼的函数入口（`addFishFromDef`, `FishDesigner/onCreate`, `DetailEditor/onSave`）中，强制在执行 `putTextureIfAbsent` 之前调用并 `await ensureAnonAuth()`。

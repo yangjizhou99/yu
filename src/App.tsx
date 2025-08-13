@@ -94,11 +94,13 @@ type FishShape = "angelfish" | "swordfish" | "longtail";
 interface Fish {
   id: number; x: number; y: number; vx: number; vy: number; speed: number;
   sizeScale: number; color: string; vision: number; targetFoodId: number|null; wanderT: number;
-  ownerName?: string; petName?: string; textureDataUrl?: string;
-  textureId?: string; // 🔹 新：云端引用
-  shape?: FishShape; // 新增形状字段
-  shapeKey?: string; // 自定义轮廓标识 (builtin:xxx | custom:ol-123)
-  textureSvg?: string; // 自定义SVG纹理
+  ownerName: string | null;
+  petName: string | null;
+  textureDataUrl: string | null;
+  textureId: string | null;
+  shape: FishShape | null;
+  shapeKey: string | null;
+  textureSvg: string | null;
 }
 type TexCache = Map<number, HTMLImageElement>;
 type Camera = { x: number; y: number; scale: number };
@@ -491,19 +493,47 @@ export default function App(){
   const cloudTimerRef = useRef<number | null>(null);
   const _ignoreNextCloud = useRef(false);
 
+// 放在工具函数区
+function cleanForFirestore<T>(val: T): T {
+  if (Array.isArray(val)) return val.map(cleanForFirestore) as any;
+  if (val && typeof val === "object") {
+    const out: any = {};
+    for (const [k, v] of Object.entries(val as any)) {
+      if (v === undefined) continue;         // ⬅️ 关键：删除 undefined
+      out[k] = cleanForFirestore(v as any);
+    }
+    return out;
+  }
+  if (typeof val === "number" && Number.isNaN(val)) return null as any;
+  return val;
+}
+
 function toCloudPayload(): CloudSave {
-  // 轻量版：不把 base64 贴图传上云，避免文档过大/费用高
-  const fishLite = fishRef.current.map(f => {
-    const { textureDataUrl, ...rest } = f as any;
-    return rest; // rest 中包含 textureId
-  });
-  return { 
-    cver: 1, 
-    nextId: nextIdRef.current, 
-    fish: fishLite, 
+  const fishLite = fishRef.current.map((f: any) => ({
+    id: f.id,
+    x: f.x, y: f.y, vx: f.vx, vy: f.vy,
+    speed: f.speed, sizeScale: f.sizeScale,
+    color: f.color, vision: f.vision,
+    targetFoodId: f.targetFoodId ?? null,   // ⬅️ null 而不是 undefined
+    wanderT: f.wanderT,
+    ownerName: f.ownerName ?? null,
+    petName:  f.petName  ?? null,
+    shape:    f.shape    ?? null,
+    textureId: f.textureId ?? null,         // ⬅️ 我们只在 Firestore 存 ID
+    shapeKey: f.shapeKey ?? null,
+    textureSvg: f.textureSvg ?? null,
+    // ⚠️ 不要带 textureDataUrl（base64），避免文档过大
+  }));
+
+  const raw: CloudSave = {
+    cver: 1,
+    nextId: nextIdRef.current,
+    fish: fishLite,
     food: foodRef.current,
-    docRev: localRevRef.current 
+    docRev: localRevRef.current
   };
+
+  return cleanForFirestore(raw);            // ⬅️ 最后统一清洗
 }
 
   function scheduleCloudSave(ms = 1200) {
@@ -720,7 +750,9 @@ function toCloudPayload(): CloudSave {
     const angle=rand(0,Math.PI*2); const spd=rand(FISH_SPEED_MIN,FISH_SPEED_MAX); const id=nextIdRef.current++;
     const f:Fish={ id, x:rand(cam.x+40,cam.x+viewW-40), y:rand(cam.y+40,cam.y+viewH-40),
       vx:Math.cos(angle)*spd, vy:Math.sin(angle)*spd, speed:spd, sizeScale:rand(0.9,1.1),
-      color:randomFishColor(), vision:FISH_VISION, targetFoodId:null, wanderT:rand(0,1000) };
+      color:randomFishColor(), vision:FISH_VISION, targetFoodId:null, wanderT:rand(0,1000),
+      ownerName: null, petName: null, textureDataUrl: null, textureId: null, shape: "angelfish",
+      shapeKey: null, textureSvg: null };
     fishRef.current.push(f);
     setFishCount(fishRef.current.length);
     scheduleSave();
@@ -760,11 +792,13 @@ function toCloudPayload(): CloudSave {
       vision: FISH_VISION,
       targetFoodId: null,
       wanderT: rand(0, 1000),
-      ownerName: undefined,
-      petName: def.label,
+      ownerName: null,
+      petName: def.label ?? null,
       textureDataUrl: dataUrl,
       textureId: texId,
-      shape: def.shape,
+      shape: def.shape ?? null,
+      shapeKey: null,
+      textureSvg: null,
     };
     fishRef.current.push(f);
     setFishCount(fishRef.current.length);
@@ -1105,10 +1139,13 @@ function toCloudPayload(): CloudSave {
               vision: FISH_VISION,
               targetFoodId: null,
               wanderT: rand(0, 1000),
-              ownerName, petName,
+              ownerName: ownerName || null,
+              petName: petName || null,
               textureDataUrl: dataUrl,   // 立即可见
               textureId: texId,          // 云端引用
-              shape,
+              shape: shape || null,
+              shapeKey: null,
+              textureSvg: null,
             };
             fishRef.current.push(f);
             setFishCount(fishRef.current.length);
@@ -1177,6 +1214,8 @@ function toCloudPayload(): CloudSave {
               vision: FISH_VISION,
               targetFoodId: null,
               wanderT: rand(0, 1000),
+              ownerName: null,
+              petName: null,
               shapeKey: `custom:${currentOutline!.id}`,
               textureSvg: svg.svgText,
               textureDataUrl: dataUrl,
