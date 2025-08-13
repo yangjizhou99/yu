@@ -1,3 +1,25 @@
+2025-08-13 19:30:00 (UTC+9) - v6.0 接入Cloud Firestore云端同步
+1. 新增Firebase集成功能：
+   - 实现匿名登录和身份验证
+   - 添加云端文档监听(onSnapshot)
+   - 实现云端读写操作(loadCloud/saveCloud)
+2. 数据同步策略：
+   - 轻量版数据模型(不含textureDataUrl)
+   - 首次加载时云端与本地择优合并
+   - 多端变更实时同步
+3. 费用控制机制：
+   - 单文档设计(/ponds/{pondId})
+   - 节流写入(scheduleCloudSave 1200ms+)
+   - 离线优先(enableIndexedDbPersistence)
+4. 安全规则：
+   - 匿名登录验证
+   - 文档字段限制
+5. 实现细节：
+   - 新增src/firebase.ts核心文件
+   - 修改App.tsx添加云端同步逻辑
+   - 添加.env环境变量配置
+   - 更新所有scheduleSave调用点添加云端同步
+
 2025-08-13 15:21:00 (UTC+9) - v5.3 海洋生物贴图系统
 1. 新增6种程序生成的海洋生物贴图：小丑鱼、蓝吊鱼、锦鲤、鲸鲨肌理、狮子鱼、鹦嘴鱼
 2. 实现贴图定义系统(TextureDef)和生成器函数(tex_clownfish等)

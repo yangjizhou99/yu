@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import OutlineEditor from "./components/OutlineEditor";
 import DetailEditor from "./components/DetailEditor";
 import { UserOutline } from "./types/fish";
+// === Firestore 接入（S6.0） ===
+import { ensureAnonAuth, loadCloud, saveCloud, listenCloud, CloudSave } from "./firebase";
 
 // —— Fish Pond Mini-Game ————————————————————————————
 // S4.1：相机(缩放/拖拽) + 巨型鱼塘(4096x2304) + 降速成长 + 🎨自定义绘鱼 + 持久化 v3
@@ -33,6 +35,16 @@ const FOOD_VARIANTS = [
 
 // —— 存档（v3） ——
 const STORAGE_KEY_V3 = "fish-pond-save-v3";
+const POND_ID_KEY = "pond-id";
+function getOrCreatePondId() {
+  let id = localStorage.getItem(POND_ID_KEY);
+  if (!id) {
+    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem(POND_ID_KEY, id);
+  }
+  return id;
+}
+const pondId = getOrCreatePondId();
 type SaveDataV3 = { version: 3; nextId: number; fish: Fish[]; food: Food[]; savedAt: string; };
 type SaveDataV2 = {
   version: 2; nextId: number;
@@ -433,10 +445,35 @@ export default function App(){
 
   // 存档：节流保存
   const dirtyRef = useRef(false); const saveTimerRef = useRef<number|null>(null);
-  function saveToStorage(){ const data:SaveDataV3={version:3,nextId:nextIdRef.current,fish:fishRef.current,food:foodRef.current,savedAt:new Date().toISOString()};
+  function saveToStorage(){ const data:SaveDataV3={version:3,nextId:nextIdRef.current,fish:fishRef.current,food:foodRef.current,savedAt:new Date().toISOString()}; 
     try{localStorage.setItem(STORAGE_KEY_V3,JSON.stringify(data));}catch{} }
   function scheduleSave(throttleMs=800){ dirtyRef.current=true; if(saveTimerRef.current!=null) return;
     saveTimerRef.current=window.setTimeout(()=>{saveTimerRef.current=null; if(dirtyRef.current){saveToStorage(); dirtyRef.current=false;}}, throttleMs); }
+
+  // === S6.0：云端节流保存 ===
+  const cloudTimerRef = useRef<number | null>(null);
+  const _ignoreNextCloud = useRef(false);
+
+  function toCloudPayload(): CloudSave {
+    // 轻量版：不把 base64 贴图传上云，避免文档过大/费用高
+    const fishLite = fishRef.current.map(f => {
+      const { textureDataUrl, ...rest } = f as any;
+      return rest;
+    });
+    return { cver: 1, nextId: nextIdRef.current, fish: fishLite, food: foodRef.current };
+  }
+
+  function scheduleCloudSave(ms = 1200) {
+    if (cloudTimerRef.current != null) return;
+    cloudTimerRef.current = window.setTimeout(async () => {
+      cloudTimerRef.current = null;
+      try {
+        _ignoreNextCloud.current = true;  // 避免自己写触发自己的监听回调
+        await saveCloud(pondId, toCloudPayload());
+        setTimeout(() => { _ignoreNextCloud.current = false; }, 300);
+      } catch (e) { console.warn("saveCloud failed", e); }
+    }, ms);
+  }
 
   // 迁移
   function migrateV2toV3(v2:SaveDataV2):SaveDataV3{ return {version:3,nextId:Math.max(1,v2.nextId??1),fish:(v2.fish??[]).map(f=>({...f})) as Fish[],food:v2.food??[],savedAt:v2.savedAt??new Date().toISOString()}; }
@@ -498,6 +535,47 @@ export default function App(){
     return ()=>{ window.removeEventListener("beforeunload", onBeforeUnload); document.removeEventListener("visibilitychange", onVisibility); };
   },[]);
 
+  // === S6.0：登录匿名账号 + 云端同步（轻量） ===
+  useEffect(() => {
+    (async () => {
+      const uid = await ensureAnonAuth();  // 匿名登录
+      console.log("Firebase anon uid:", uid);
+
+      // 1) 初次拉取云数据（若存在），与本地择优合并（谁新用谁）
+      try {
+        const cloud = await loadCloud(pondId);
+        const localSavedAt = loadFromStorage()?.savedAt ? new Date(loadFromStorage()!.savedAt).getTime() : 0;
+        const cloudTime = (cloud as any)?.updatedAt?.toMillis?.() ?? 0;
+
+        if (cloud && cloudTime > localSavedAt) {
+          // 用云端覆盖本地（轻量版：不含 textureDataUrl）
+          fishRef.current = (cloud.fish ?? []).map((f: any) => ({ ...f })) as any;
+          foodRef.current = (cloud.food ?? []).map((fd: any) => ({ ...fd }));
+          nextIdRef.current = cloud.nextId ?? 1;
+          setFishCount(fishRef.current.length);
+          setFoodCount(foodRef.current.length);
+          scheduleSave(); // 同步回本地存档 v3
+        } else {
+          // 本地更新云端（轻量）
+          scheduleCloudSave(800);
+        }
+      } catch (e) { console.warn("cloud init failed", e); }
+
+      // 2) 监听云端变更（他端修改时合并）
+      const un = listenCloud(pondId, (cloud) => {
+        if (_ignoreNextCloud.current) return; // 自己刚写过，忽略一次
+        // 简单策略：直接覆盖运行时状态（轻量）
+        fishRef.current = (cloud.fish ?? []) as any;
+        foodRef.current = (cloud.food ?? []);
+        nextIdRef.current = cloud.nextId ?? 1;
+        setFishCount(fishRef.current.length);
+        setFoodCount(foodRef.current.length);
+        scheduleSave(); // 写回本地
+      });
+      return () => un();
+    })();
+  }, []);
+
   // 相机工具
   function getCssSize(){ const cvs=canvasRef.current!; const rect=cvs.getBoundingClientRect(); return {cssW:rect.width, cssH:rect.height}; }
   function ensureCamInBounds(){ const {cssW,cssH}=getCssSize(); const cam=camRef.current;
@@ -524,7 +602,7 @@ export default function App(){
     const f:Fish={ id, x:rand(cam.x+40,cam.x+viewW-40), y:rand(cam.y+40,cam.y+viewH-40),
       vx:Math.cos(angle)*spd, vy:Math.sin(angle)*spd, speed:spd, sizeScale:rand(0.9,1.1),
       color:randomFishColor(), vision:FISH_VISION, targetFoodId:null, wanderT:rand(0,1000) };
-    fishRef.current.push(f); setFishCount(fishRef.current.length); scheduleSave();
+    fishRef.current.push(f); setFishCount(fishRef.current.length); scheduleSave(); scheduleCloudSave();
   }
 
   function addFishWithTexture(texKey: TextureKey) {
@@ -569,7 +647,7 @@ export default function App(){
   function clearSaveAndReset(){
     try{localStorage.removeItem(STORAGE_KEY_V3);}catch{}
     fishRef.current=[]; foodRef.current=[]; nextIdRef.current=1;
-    setFishCount(0); setFoodCount(0); texCacheRef.current.clear(); scheduleSave();
+    setFishCount(0); setFoodCount(0); texCacheRef.current.clear(); scheduleSave(); scheduleCloudSave();
   }
 
   // —— 交互：投喂 / 拖拽 / 缩放 —— //
@@ -601,7 +679,7 @@ export default function App(){
     // 左键点击投喂（世界坐标）
     const wpos=screenToWorld(sx,sy); const id=nextIdRef.current++; const v=pickFoodVariant();
     foodRef.current.push({id,x:clamp(wpos.x,0,WORLD_W),y:clamp(wpos.y,0,WORLD_H),r:v.radius,kind:v.kind,growPct:v.growPct});
-    setFoodCount(foodRef.current.length); scheduleSave(); (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId);
+    setFoodCount(foodRef.current.length); scheduleSave(); scheduleCloudSave(); (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId);
   }
   function onWheel(e:React.WheelEvent<HTMLCanvasElement>){
     const rect=(e.target as HTMLCanvasElement).getBoundingClientRect();
@@ -663,7 +741,7 @@ export default function App(){
           }
         }
       }
-      if(ate) scheduleSave();
+      if(ate) { scheduleSave(); scheduleCloudSave(); }
       setFoodCount(foods.length);
 
       // 绘制鱼
@@ -813,8 +891,8 @@ export default function App(){
 
           <button onClick={openDesigner} className="px-3 py-1.5 rounded-2xl shadow-sm bg-violet-500 text-white hover:bg-violet-600 active:scale-[0.98]">🎨 自定义新鱼</button>
           <button onClick={openOutlineEditor} className="px-3 py-1.5 rounded-2xl shadow-sm bg-emerald-500 text-white hover:bg-emerald-600 active:scale-[0.98]">🎯 创建新鱼形（两步）</button>
-          <button onClick={()=>{ fishRef.current=[]; setFishCount(0); scheduleSave(); }} className="px-3 py-1.5 rounded-2xl bg-slate-200 hover:bg-slate-300">清空鱼</button>
-          <button onClick={()=>{ foodRef.current=[]; setFoodCount(0); scheduleSave(); }} className="px-3 py-1.5 rounded-2xl bg-amber-200 hover:bg-amber-300">清空饲料</button>
+          <button onClick={()=>{ fishRef.current=[]; setFishCount(0); scheduleSave(); scheduleCloudSave(); }} className="px-3 py-1.5 rounded-2xl bg-slate-200 hover:bg-slate-300">清空鱼</button>
+          <button onClick={()=>{ foodRef.current=[]; setFoodCount(0); scheduleSave(); scheduleCloudSave(); }} className="px-3 py-1.5 rounded-2xl bg-amber-200 hover:bg-amber-300">清空饲料</button>
           <button onClick={clearSaveAndReset} className="px-3 py-1.5 rounded-2xl bg-rose-200 hover:bg-rose-300">清空存档</button>
         </div>
       </div>
