@@ -1,4 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
+import OutlineEditor from "./components/OutlineEditor";
+import DetailEditor from "./components/DetailEditor";
+import { UserOutline } from "./types/fish";
 
 // —— Fish Pond Mini-Game ————————————————————————————
 // S4.1：相机(缩放/拖拽) + 巨型鱼塘(4096x2304) + 降速成长 + 🎨自定义绘鱼 + 持久化 v3
@@ -59,6 +62,8 @@ interface Fish {
   sizeScale: number; color: string; vision: number; targetFoodId: number|null; wanderT: number;
   ownerName?: string; petName?: string; textureDataUrl?: string;
   shape?: FishShape; // 新增形状字段
+  shapeKey?: string; // 自定义轮廓标识 (builtin:xxx | custom:ol-123)
+  textureSvg?: string; // 自定义SVG纹理
 }
 type TexCache = Map<number, HTMLImageElement>;
 type Camera = { x: number; y: number; scale: number };
@@ -98,6 +103,30 @@ function beginFishBodyPathAbs_byShape(ctx: CanvasRenderingContext2D, shape: Fish
 }
 
 /** —— 1) 流线型（现有基础款，略尖头、饱腹、细尾柄） —— */
+function getOutlinePathForFish(f: Fish): { path?: Path2D, box:{w:number,h:number}, flipX:boolean } {
+  if (!f.shapeKey?.startsWith("custom:")) {
+    // 仍支持内置形状
+    return { 
+      path: new Path2D(), 
+      box: {w: 100, h: 50}, 
+      flipX: false 
+    };
+  }
+  const id = f.shapeKey.slice(7);
+  const lib: UserOutline[] = JSON.parse(localStorage.getItem('fish-outline-lib-v1') || '[]');
+  const o = lib.find(x => x.id === id);
+  if (!o) return { 
+    path: new Path2D(), 
+    box: {w: 100, h: 50}, 
+    flipX: false 
+  };
+  return { 
+    path: new Path2D(o.pathD), 
+    box: o.viewBox, 
+    flipX: !o.headIsLeft 
+  };
+}
+
 function beginFishBodyPath_streamlined(ctx: CanvasRenderingContext2D, L: number, H: number) {
   ctx.moveTo(+L*0.50, 0);
   ctx.bezierCurveTo(+L*0.42, -H*0.10, +L*0.20, -H*0.42, -L*0.30, -H*0.24);
@@ -234,10 +263,21 @@ export default function App(){
   const panStartRef = useRef<{sx:number;sy:number;camX:number;camY:number}>({sx:0,sy:0,camX:0,camY:0});
   const spaceDownRef = useRef(false);
 
-  // 绘鱼面板
+  // 编辑器面板状态
   const [designerOpen, setDesignerOpen] = useState(false);
+  const [outlineEditorOpen, setOutlineEditorOpen] = useState(false);
+  const [detailEditorOpen, setDetailEditorOpen] = useState(false);
+  const [currentOutline, setCurrentOutline] = useState<UserOutline | null>(null);
+
   const openDesigner = () => setDesignerOpen(true);
   const closeDesigner = () => setDesignerOpen(false);
+  const openOutlineEditor = () => setOutlineEditorOpen(true);
+  const closeOutlineEditor = () => setOutlineEditorOpen(false);
+  const openDetailEditor = (outline: UserOutline) => {
+    setCurrentOutline(outline);
+    setDetailEditorOpen(true);
+  };
+  const closeDetailEditor = () => setDetailEditorOpen(false);
 
   // 存档：节流保存
   const dirtyRef = useRef(false); const saveTimerRef = useRef<number|null>(null);
@@ -435,14 +475,22 @@ export default function App(){
       // 绘制鱼
       for(const f of fishRef.current){
         const angle=Math.atan2(f.vy,f.vx); const base=BASE_FISH_SIZE*f.sizeScale;
+        const { path, box, flipX } = getOutlinePathForFish(f);
         const bodyLen=base*1.6, bodyH=base*0.9; const tailWobble=Math.sin((now+f.id)*8)*(base*0.22);
 
         ctx.save(); ctx.translate(f.x,f.y); ctx.rotate(angle);
+        if (flipX) { ctx.scale(-1,1); ctx.translate(-bodyLen*0.5,0); }
+        
         if(!f.textureDataUrl || !texCacheRef.current.get(f.id)){
           const grdBody=ctx.createLinearGradient(0,-bodyH,0,bodyH); grdBody.addColorStop(0,"rgba(255,255,255,0.9)"); grdBody.addColorStop(1,f.color);
           ctx.fillStyle=grdBody; ctx.beginPath();
-          beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen, bodyH);
-          ctx.fill();
+          if (path) {
+            ctx.scale(bodyLen/box.w, bodyH/box.h);
+            ctx.fill(path);
+          } else {
+            beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen, bodyH);
+            ctx.fill();
+          }
         }else{
           const img=texCacheRef.current.get(f.id)!; ctx.save(); ctx.beginPath();
           beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen, bodyH);
@@ -548,6 +596,7 @@ export default function App(){
 
           <button onClick={addFish} className="px-3 py-1.5 rounded-2xl shadow-sm bg-sky-500 text-white hover:bg-sky-600 active:scale-[0.98]">+1 条鱼</button>
           <button onClick={openDesigner} className="px-3 py-1.5 rounded-2xl shadow-sm bg-violet-500 text-white hover:bg-violet-600 active:scale-[0.98]">🎨 自定义新鱼</button>
+          <button onClick={openOutlineEditor} className="px-3 py-1.5 rounded-2xl shadow-sm bg-emerald-500 text-white hover:bg-emerald-600 active:scale-[0.98]">🎯 创建新鱼形（两步）</button>
           <button onClick={()=>{ fishRef.current=[]; setFishCount(0); scheduleSave(); }} className="px-3 py-1.5 rounded-2xl bg-slate-200 hover:bg-slate-300">清空鱼</button>
           <button onClick={()=>{ foodRef.current=[]; setFoodCount(0); scheduleSave(); }} className="px-3 py-1.5 rounded-2xl bg-amber-200 hover:bg-amber-300">清空饲料</button>
           <button onClick={clearSaveAndReset} className="px-3 py-1.5 rounded-2xl bg-rose-200 hover:bg-rose-300">清空存档</button>
@@ -597,7 +646,7 @@ export default function App(){
               targetFoodId: null,
               wanderT: rand(0, 1000),
               ownerName, petName, textureDataUrl: dataUrl,
-              shape, // 添加形状字段
+              shape,
             };
             fishRef.current.push(f);
             setFishCount(fishRef.current.length);
@@ -607,6 +656,65 @@ export default function App(){
           }}
         />
       )}
+      
+      {outlineEditorOpen && (
+        <OutlineEditor
+          onSave={(outline) => {
+            closeOutlineEditor();
+            openDetailEditor(outline);
+          }}
+          onCancel={closeOutlineEditor}
+        />
+      )}
+      
+      {detailEditorOpen && currentOutline && (
+        <DetailEditor
+          outline={currentOutline}
+          onSave={(svg) => {
+            closeDetailEditor();
+            if (fishRef.current.length >= MAX_FISH_COUNT) return;
+            
+            const rect = canvasRef.current!.getBoundingClientRect();
+            const viewW = rect.width / camRef.current.scale;
+            const viewH = rect.height / camRef.current.scale;
+            const angle = rand(0, Math.PI * 2);
+            const spd = rand(FISH_SPEED_MIN, FISH_SPEED_MAX);
+            const id = nextIdRef.current++;
+            
+            const f: Fish = {
+              id,
+              x: rand(camRef.current.x + 40, camRef.current.x + viewW - 40),
+              y: rand(camRef.current.y + 40, camRef.current.y + viewH - 40),
+              vx: Math.cos(angle) * spd,
+              vy: Math.sin(angle) * spd,
+              speed: spd,
+              sizeScale: 1.0,
+              color: randomFishColor(),
+              vision: FISH_VISION,
+              targetFoodId: null,
+              wanderT: rand(0, 1000),
+              shapeKey: `custom:${currentOutline!.id}`,
+              textureSvg: svg.svgText,
+              textureDataUrl: svg.previewPng,
+              shape: "angelfish" // 使用默认形状作为占位
+            };
+            
+            fishRef.current.push(f);
+            setFishCount(fishRef.current.length);
+            if (svg.previewPng) {
+              const img = new Image();
+              img.src = svg.previewPng;
+              texCacheRef.current.set(id, img);
+            }
+            scheduleSave();
+          }}
+          onBack={() => {
+            closeDetailEditor();
+            openOutlineEditor();
+          }}
+        />
+      )}
+      
     </div>
   );
 }

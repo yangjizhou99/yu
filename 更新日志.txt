@@ -1,11 +1,11 @@
-2025-08-13 05:02:00 (UTC+9)
-1. 添加frameRef作为轮廓层画布
-2. 实现setupHiDPICanvas工具函数
-3. 修改形状切换逻辑，确保立即生效
-4. 更新裁剪和渲染逻辑，解决形状切换时虚线残留问题
-
-2025-08-13 04:52:00 (UTC+9)
-1. 在FishDesigner组件中添加remaskExistingDrawingToShape函数
-2. 修改onPointerDown函数，在按下时调用remaskExistingDrawingToShape
-3. 修改形状切换按钮的onClick处理，在切换形状后调用remaskExistingDrawingToShape
-4. 实现功能：当切换鱼形状时，自动将现有绘制内容重新裁剪到新形状轮廓内
+2025-08-13 14:04
+1. 添加自定义鱼形轮廓支持
+   - 新增UserOutline和UserFishSVG类型定义
+   - 实现轮廓编辑器和细节编辑器
+   - 添加getOutlinePathForFish函数处理自定义轮廓渲染
+   - 修改鱼塘渲染逻辑以支持自定义轮廓
+2. 修复TypeScript错误
+   - 修复JSON.parse参数处理问题
+3. 优化代码结构
+   - 保持与现有功能的兼容性
+   - 确保旧存档不受影响
