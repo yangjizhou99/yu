@@ -31,7 +31,7 @@ const FISH_SPEED_MAX = 90;
 const FISH_TURN_SMOOTH = 0.08;
 const FISH_VISION = 160;
 const EAT_RADIUS = 14;
-const MAX_FISH_COUNT = 80;
+const MAX_FISH_BASE = 80;
 const SIZE_SCALE_MAX = 2.5; // 体型上限
 
 // —— 饲料（降低总体成长：期望≈0.684%/颗） ——
@@ -625,11 +625,17 @@ function toCloudPayload(): CloudSave {
   // 画布尺寸
   function resizeCanvas(){
     const cvs=canvasRef.current!, parent=containerRef.current!;
-    const rect=parent.getBoundingClientRect(); const dpr=window.devicePixelRatio||1;
-    const cssW=Math.max(320, Math.floor(rect.width || parent.clientWidth || 800));
-    const cssH=Math.max(220, Math.floor(rect.height|| parent.clientHeight|| Math.round(cssW*9/16)));
-    cvs.width=Math.floor(cssW*dpr); cvs.height=Math.floor(cssH*dpr);
-    cvs.style.width=cssW+"px"; cvs.style.height=cssH+"px";
+    const rect=parent.getBoundingClientRect();
+    const rawDpr = window.devicePixelRatio || 1;
+    const MAX_DPR = 2.2;                 // 性能上限，避免 3x/4x 过重
+    const dpr = Math.min(rawDpr, MAX_DPR);
+
+    const cssW = Math.max(320, Math.floor(rect.width));
+    const cssH = Math.max(220, Math.floor(rect.height));
+    cvs.width = Math.floor(cssW * dpr);
+    cvs.height = Math.floor(cssH * dpr);
+    cvs.style.width = cssW + 'px';
+    cvs.style.height = cssH + 'px';
     if(!initedCamRef.current){
       camRef.current.scale=1;
       camRef.current.x = clamp((WORLD_W - cssW/camRef.current.scale)/2, 0, Math.max(0, WORLD_W - cssW/camRef.current.scale));
@@ -639,7 +645,16 @@ function toCloudPayload(): CloudSave {
   }
 
   // Resize
-  useEffect(()=>{ const ro=new ResizeObserver(resizeCanvas); if(containerRef.current) ro.observe(containerRef.current); return ()=>ro.disconnect(); },[]);
+  useEffect(()=>{
+    let _rzTimer: number | null = null;
+    const onResize = () => {
+      if (_rzTimer != null) return;
+      _rzTimer = window.setTimeout(() => { _rzTimer = null; resizeCanvas(); }, 60);
+    };
+    const ro = new ResizeObserver(onResize);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  },[]);
 
   // 初始化贴图预览
   useEffect(() => { initTexturePreviews(); }, []);
@@ -745,9 +760,17 @@ function toCloudPayload(): CloudSave {
     cam.scale = clamp(Math.min(cssW/WORLD_W, cssH/WORLD_H), SCALE_MIN, SCALE_MAX);
     cam.x=0; cam.y=0; ensureCamInBounds(); }
 
+  function currentMaxFish() {
+    const el = containerRef.current;
+    if (!el) return MAX_FISH_BASE;
+    const r = el.getBoundingClientRect();
+    const areaK = (r.width * r.height) / (1280 * 720); // 以 720p 为基准
+    return Math.max(24, Math.floor(MAX_FISH_BASE * Math.min(1.2, areaK)));
+  }
+
   // 添加随机鱼（当前视野内）
   function addFish(){
-    if(fishRef.current.length>=MAX_FISH_COUNT) return;
+    if(fishRef.current.length>=currentMaxFish()) return;
     const {cssW,cssH}=getCssSize(); const cam=camRef.current;
     const viewW=cssW/cam.scale, viewH=cssH/cam.scale;
     const angle=rand(0,Math.PI*2); const spd=rand(FISH_SPEED_MIN,FISH_SPEED_MAX); const id=nextIdRef.current++;
@@ -1038,22 +1061,24 @@ function toCloudPayload(): CloudSave {
 
   // 按钮条 + 画布 + 绘鱼面板
   return (
-    <div className="w-full max-w-5xl mx-auto">
-      <div className="flex items-center justify-between gap-3 mb-3">
+    <div className="w-full max-w-5xl mx-auto pb-[env(safe-area-inset-bottom,0px)]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 mb-3">
         <h2 className="text-xl font-semibold">🐟 小鱼塘 Mini-Game</h2>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* 视角控制 */}
           <button onClick={zoomOutCenter} className="px-2 py-1 rounded-2xl bg-slate-200 hover:bg-slate-300">➖</button>
           <button onClick={zoomInCenter} className="px-2 py-1 rounded-2xl bg-slate-200 hover:bg-slate-300">➕</button>
           <button onClick={resetView} className="px-2 py-1 rounded-2xl bg-slate-200 hover:bg-slate-300">⟳ 重置</button>
           <button onClick={fitAll} className="px-2 py-1 rounded-2xl bg-slate-200 hover:bg-slate-300">⤢ 全景</button>
 
-          <button onClick={addFish} className="px-3 py-1.5 rounded-2xl shadow-sm bg-sky-500 text-white hover:bg-sky-600 active:scale-[0.98]">+1 条鱼</button>
+          <button onClick={addFish} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
+            bg-sky-500 text-white hover:bg-sky-600 active:scale-[0.98]">+1 条鱼</button>
           
           <div className="relative">
             <button
               onClick={() => setShowTexPicker(v => !v)}
-              className="px-3 py-1.5 rounded-2xl shadow-sm bg-indigo-500 text-white hover:bg-indigo-600"
+              className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
+            bg-indigo-500 text-white hover:bg-indigo-600"
               title="从贴图库添加海洋生物皮肤"
             >🖼 贴图海生物</button>
 
@@ -1071,8 +1096,10 @@ function toCloudPayload(): CloudSave {
             )}
           </div>
 
-          <button onClick={openDesigner} className="px-3 py-1.5 rounded-2xl shadow-sm bg-violet-500 text-white hover:bg-violet-600 active:scale-[0.98]">🎨 自定义新鱼</button>
-          <button onClick={openOutlineEditor} className="px-3 py-1.5 rounded-2xl shadow-sm bg-emerald-500 text-white hover:bg-emerald-600 active:scale-[0.98]">🎯 创建新鱼形（两步）</button>
+          <button onClick={openDesigner} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
+            bg-violet-500 text-white hover:bg-violet-600 active:scale-[0.98]">🎨 自定义新鱼</button>
+          <button onClick={openOutlineEditor} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
+            bg-emerald-500 text-white hover:bg-emerald-600 active:scale-[0.98]">🎯 创建新鱼形（两步）</button>
           <button onClick={()=>{ fishRef.current=[]; setFishCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-slate-200 hover:bg-slate-300">清空鱼</button>
           <button onClick={()=>{ foodRef.current=[]; setFoodCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-amber-200 hover:bg-amber-300">清空饲料</button>
           <button
@@ -1081,7 +1108,8 @@ function toCloudPayload(): CloudSave {
               const url = `${location.origin}${base}?pond=${pondId}`;
               navigator.clipboard.writeText(url).then(() => alert("分享链接已复制到剪贴板"));
             }}
-            className="px-3 py-1.5 rounded-2xl shadow-sm bg-emerald-500 text-white hover:bg-emerald-600"
+            className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
+            bg-emerald-500 text-white hover:bg-emerald-600"
             title="复制当前池塘的分享链接"
           >🔗 分享这个池塘</button>
 
@@ -1095,10 +1123,21 @@ function toCloudPayload(): CloudSave {
         <span className="ml-3">饲料：{foodCount}</span>
       </div>
 
-      <div ref={containerRef} className="w-full aspect-[16/9] rounded-2xl overflow-hidden shadow-inner bg-sky-50 border border-sky-100">
+      <div
+        ref={containerRef}
+        className="
+          w-full
+          h-[min(72svh,72vh)]
+          sm:h-[70vh] md:h-[68vh]
+          lg:aspect-[16/9]
+          min-h-[240px] max-h-[calc(100svh-120px)]
+          rounded-2xl overflow-hidden shadow-inner bg-sky-50 border border-sky-100
+        "
+        style={{ paddingBottom: 'env(safe-area-inset-bottom,0px)' }}
+      >
         <canvas
           ref={canvasRef}
-          className="w-full h-full cursor-crosshair"
+          className="w-full h-full cursor-crosshair touch-none select-none"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -1111,7 +1150,7 @@ function toCloudPayload(): CloudSave {
         <FishDesigner
           onCancel={closeDesigner}
           onCreate={async (ownerName, petName, dataUrl, shape) => {
-            if (fishRef.current.length >= MAX_FISH_COUNT) { closeDesigner(); return; }
+            if (fishRef.current.length >= currentMaxFish()) { closeDesigner(); return; }
             
             await ensureAnonAuth(); // 确保已登录
             // 1) 计算哈希并把贴图写入 textures 集合（若已存在则跳过）
@@ -1179,7 +1218,7 @@ function toCloudPayload(): CloudSave {
           outline={currentOutline}
           onSave={async (svg) => {
             closeDetailEditor();
-            if (fishRef.current.length >= MAX_FISH_COUNT) return;
+            if (fishRef.current.length >= currentMaxFish()) return;
 
             const dataUrl = svg.previewPng;
             if (!dataUrl) {
@@ -1263,7 +1302,8 @@ function FishDesigner({ onCancel, onCreate }: {
   const shapeRef = useRef<FishShape>("angelfish");
   useEffect(() => { shapeRef.current = shape; }, [shape]);
 
-  const CSS_W=360, CSS_H=200;
+  const CSS_W = Math.floor(Math.min(520, Math.max(280, window.innerWidth * 0.9)));
+  const CSS_H = Math.floor(CSS_W * 0.56); // 稍横向比例，给鱼身空间
   const fishFrame = { cx: CSS_W*0.5, cy: CSS_H*0.5, L: CSS_W*0.68, H: CSS_H*0.60 };
 
   function setupHiDPICanvas(cvs: HTMLCanvasElement, cssW: number, cssH: number) {
@@ -1382,14 +1422,14 @@ function FishDesigner({ onCancel, onCreate }: {
               <canvas
                 ref={drawRef}
                 className="rounded-xl border border-sky-200 shadow-inner touch-none bg-white"
-                style={{ width: 360, height: 200 }}
+                style={{ width: CSS_W, height: CSS_H }}
                 onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}
               />
               {/* 轮廓层：不接收事件 */}
               <canvas
                 ref={frameRef}
                 className="absolute inset-0 pointer-events-none"
-                style={{ width: 360, height: 200 }}
+                style={{ width: CSS_W, height: CSS_H }}
               />
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">

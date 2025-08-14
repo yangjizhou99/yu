@@ -1,3 +1,13 @@
+[2025-08-14] R1 自适应布局与性能优化
+- **容器自适应 (R1-1)**: 移除了固定的 16:9 宽高比，采用 `svh`/`vh` 单位实现视口高度自适应，仅在 `lg` 大屏断点恢复 16:9，并为 iOS 添加了安全区 `padding`。
+- **Canvas 高 DPI (R1-2)**: 优化了 `resizeCanvas` 函数，通过限制 `devicePixelRatio` (最大 2.2) 来平衡清晰度与性能，避免在超高分屏上过度消耗资源。
+- **Resize 节流 (R1-3)**: 为 `ResizeObserver` 添加了 60ms 的节流 (`setTimeout`)，防止因浏览器窗口频繁调整（如移动端地址栏滚动）导致的性能抖动。
+- **按钮响应式 (R1-4)**: 调整了按钮栏的 Flex 布局，使其在小屏上（`sm` 以下）垂直排列，按钮尺寸和字体也增加了 `sm:` 响应式前缀。
+- **Designer 面板自适应 (R1-5)**: 将 `FishDesigner` 组件的画布尺寸从固定值改为使用 `Math.min/max` 和 `window.innerWidth` 动态计算，使其在不同设备上都能合理显示。
+- **iOS 安全区 (R1-6)**: 在 `index.html` 的 `viewport` meta 标签中加入了 `viewport-fit=cover`，并在 App 根容器上增加了 `pb-[env(safe-area-inset-bottom)]`，以适配 iPhone 的底部安全区。
+- **动态性能保护 (R1-7)**: 将最大鱼数 `MAX_FISH_COUNT` 改为动态计算函数 `currentMaxFish()`，根据画布的实际面积动态调整鱼的数量上限，在小屏上自动降低数量以保证帧率。
+- **Pointer 事件优化 (R1-8)**: 为主画布 `canvas` 增加了 `touch-none` 和 `select-none` 类，以避免在移动设备上的手势操作（如双指缩放、长按选择）干扰游戏内交互。
+
 [2025-08-13] S6.2B-fix-5：完成对所有云端数据的深度清洗
 - **问题定位**：经过最终排查，确认 `toCloudPayload` 函数在处理 `food` 数组时未进行白名单筛选，是 `undefined` 错误的最后来源。
 - **核心修复**：
