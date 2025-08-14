@@ -1,3 +1,11 @@
+[2025-08-14] L1 排行榜功能
+- 新增Firestore规则，允许读写`fish_index`集合
+- 在`firebase.ts`中添加鱼索引工具函数（upsertFishIndex, fetchTopFish）
+- 在App组件中实现脏标记（lastIndexedSize, markFishIndexDirty）和节流更新
+- 在三个关键点触发索引更新：创建自定义鱼、贴图海生物、喂食
+- 添加排行榜UI组件（按钮和弹窗）
+- 实现按池塘和全局查看Top10功能，支持刷新
+
 [2025-08-14] R1 自适应布局与性能优化
 - **容器自适应 (R1-1)**: 移除了固定的 16:9 宽高比，采用 `svh`/`vh` 单位实现视口高度自适应，仅在 `lg` 大屏断点恢复 16:9，并为 iOS 添加了安全区 `padding`。
 - **Canvas 高 DPI (R1-2)**: 优化了 `resizeCanvas` 函数，通过限制 `devicePixelRatio` (最大 2.2) 来平衡清晰度与性能，避免在超高分屏上过度消耗资源。

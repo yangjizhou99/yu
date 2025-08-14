@@ -11,7 +11,9 @@ import {
   CloudSave,
   sha256Base64,
   putTextureIfAbsent,
-  getTextureDataUrl
+  getTextureDataUrl,
+  upsertFishIndex,
+  fetchTopFish
 } from "./firebase";
 
 // —— Fish Pond Mini-Game ————————————————————————————
@@ -430,10 +432,40 @@ export default function App(){
   const containerRef = useRef<HTMLDivElement|null>(null);
   const [fishCount, setFishCount] = useState(0);
   const [foodCount, setFoodCount] = useState(0);
+  const [lbOpen, setLbOpen] = useState(false);
+  const [lbData, setLbData] = useState<any[]>([]);
+  const [lbScope, setLbScope] = useState<'pond'|'global'>('pond'); // 默认看当前池塘
 
   const fishRef = useRef<Fish[]>([]);
   const foodRef = useRef<Food[]>([]);
-  const nextIdRef = useRef(1);
+const nextIdRef = useRef(1);
+
+// === L1 排行榜：脏标记与阈值 ===
+const lastIndexedSize = useRef<Map<number, number>>(new Map()); // fishId -> sizeScale
+const indexTimerRef = useRef<number | null>(null);
+const INDEX_COOLDOWN_MS = 1200;     // 节流，省钱
+const INDEX_DELTA = 0.01;           // 体型变化>=1%才更新索引
+
+function markFishIndexDirty(fishId: number) {
+  if (indexTimerRef.current != null) return;
+  indexTimerRef.current = window.setTimeout(async () => {
+    indexTimerRef.current = null;
+    try {
+      await ensureAnonAuth();
+      // 只把“变化超过阈值且是用户鱼（ownerName存在）”的鱼写入索引
+      for (const f of fishRef.current) {
+        if (!f.ownerName) continue;
+        const last = lastIndexedSize.current.get(f.id) ?? 0;
+        if (Math.abs((f.sizeScale || 1) - last) >= INDEX_DELTA || last === 0) {
+          await upsertFishIndex(pondId, f);
+          lastIndexedSize.current.set(f.id, f.sizeScale || 1);
+        }
+      }
+    } catch (e) {
+      console.warn("[L1] index sync failed", e);
+    }
+  }, INDEX_COOLDOWN_MS);
+}
 
   // === S6.2C: 版本号持久化 ===
   const localRevRef = useRef(0);
@@ -658,6 +690,19 @@ function toCloudPayload(): CloudSave {
 
   // 初始化贴图预览
   useEffect(() => { initTexturePreviews(); }, []);
+
+  // Load leaderboard data when modal opens
+  useEffect(() => {
+    if (!lbOpen) return;
+    (async () => {
+      try { 
+        const list = await fetchTopFish(10, pondId); 
+        setLbData(list); 
+      } catch(e){ 
+        console.warn("[L1] fetch lb failed", e); 
+      }
+    })();
+  }, [lbOpen]);
 
   // 初始化时读取版本号
   useEffect(() => { loadLocalRev(pondId); }, []);
@@ -1283,6 +1328,58 @@ function toCloudPayload(): CloudSave {
       )}
       
     </div>
+
+    {/* Leaderboard Modal */}
+    {lbOpen && (
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-lg font-semibold">🏆 排行榜（Top10）</h3>
+            <button onClick={()=>setLbOpen(false)} className="px-2 py-1">关闭</button>
+          </div>
+
+          <div className="flex items-center gap-2 mb-3">
+            <label className="text-sm">范围：</label>
+            <button
+              className={`px-2 py-1 rounded border ${lbScope==='pond'?'bg-sky-100':'bg-white'}`}
+              onClick={async ()=>{
+                setLbScope('pond');
+                const list = await fetchTopFish(10, pondId);
+                setLbData(list);
+              }}
+            >当前池塘</button>
+            <button
+              className={`px-2 py-1 rounded border ${lbScope==='global'?'bg-sky-100':'bg-white'}`}
+              onClick={async ()=>{
+                setLbScope('global');
+                const list = await fetchTopFish(10);
+                setLbData(list);
+              }}
+            >全局</button>
+            <button
+              className="ml-auto px-2 py-1 rounded border"
+              onClick={async ()=>{
+                const list = await fetchTopFish(10, lbScope==='pond'?pondId:undefined);
+                setLbData(list);
+              }}
+            >刷新</button>
+          </div>
+
+          <ul className="divide-y">
+            {lbData.map((d, i) => (
+              <li key={`${d.pondId}_${d.fishId}`} className="py-2 flex items-center gap-3">
+                <div className="w-6 text-right">{i+1}</div>
+                <div className="flex-1">
+                  <div className="text-sm font-medium">{d.petName || '未命名'} <span className="text-slate-500">by {d.ownerName}</span></div>
+                  <div className="text-xs text-slate-500">体型：{(d.sizeScale||1).toFixed(3)} · 形状：{d.shape || '默认'}</div>
+                </div>
+              </li>
+            ))}
+            {lbData.length===0 && <li className="py-6 text-center text-slate-500 text-sm">暂无数据（需要先创建带“用户名字”的鱼）</li>}
+          </ul>
+        </div>
+      </div>
+    )}
   );
 }
 
