@@ -35,11 +35,13 @@ const MAX_FISH_BASE = 80;
 const SIZE_SCALE_MAX = 2.5; // 体型上限
 
 // —— 饲料（降低总体成长：期望≈0.684%/颗） ——
-type FoodKind = "common" | "uncommon" | "rare";
+type FoodKind = "common" | "uncommon" | "rare" | "epic" | "legendary";
 const FOOD_VARIANTS = [
-  { kind: "common" as FoodKind,   prob: 0.75, growPct: 0.004, radius: 5 }, // +0.4%
-  { kind: "uncommon" as FoodKind, prob: 0.22, growPct: 0.012, radius: 6 }, // +1.2%
-  { kind: "rare" as FoodKind,     prob: 0.03, growPct: 0.04,  radius: 7 }, // +4%
+  { kind: "common" as FoodKind,   prob: 0.60, growPct: 0.004, radius: 5 }, // +0.4%
+  { kind: "uncommon" as FoodKind, prob: 0.20, growPct: 0.012, radius: 6 }, // +1.2%
+  { kind: "rare" as FoodKind,     prob: 0.10, growPct: 0.04,  radius: 7 }, // +4%
+  { kind: "epic" as FoodKind,     prob: 0.07, growPct: 0.10,  radius: 8 }, // +10%
+  { kind: "legendary" as FoodKind,prob: 0.03, growPct: 0.22,  radius: 10 }, // +22%
 ];
 
 // —— 存档（v3） ——
@@ -384,7 +386,245 @@ function beginFishBodyPathAbs_longtail(ctx:CanvasRenderingContext2D, cx:number, 
 }
 
 // —— 海洋背景：深海渐变 + 光斑 + 沙地 —— //
+
+type Kelp = { x: number; height: number; phase: number; hue: number; thickness: number };
+type Coral = { x: number; y: number; size: number; color: string; arms: number; swaySpeed: number; swayPhase: number };
+type Rock = { x: number; y: number; w: number; h: number; tint: string };
+type Shell = { x: number; y: number; size: number; color: string };
+type FishSchool = { y: number; count: number; speed: number; amp: number; scale: number; alpha: number; phase: number };
+type BubbleCol = { x: number; speed: number; phase: number };
+type Jelly = { x: number; y0: number; speed: number; amp: number; phase: number; scale: number; alpha: number };
+type RayMob = { y: number; speed: number; amp: number; scale: number; alpha: number; dir: 1 | -1; phase: number };
+type TurtleMob = { y: number; speed: number; amp: number; scale: number; alpha: number; dir: 1 | -1; phase: number };
+type CrabMob = { x0: number; y: number; speed: number; dir: 1 | -1; range: number; scale: number };
+
+const decorRef = { current: null as null | {
+  kelp: Kelp[];
+  corals: Coral[];
+  rocks: Rock[];
+  shells: Shell[];
+  schools: FishSchool[];
+  bubbles: BubbleCol[];
+  jellies: Jelly[];
+  rays: RayMob[];
+  turtles: TurtleMob[];
+  crabs: CrabMob[];
+}};
+
+function initOceanDecor() {
+  if (decorRef.current) return;
+  const seabedTop = WORLD_H - 180;
+  // 海草
+  const kelp: Kelp[] = Array.from({ length: 18 }, (_, i) => ({
+    x: 40 + Math.random() * (WORLD_W - 80),
+    height: 120 + Math.random() * 220,
+    phase: Math.random() * Math.PI * 2,
+    hue: 150 + Math.random() * 30,
+    thickness: 4 + Math.random() * 3,
+  }));
+  // 岩石
+  const rocks: Rock[] = Array.from({ length: 12 }, () => ({
+    x: 20 + Math.random() * (WORLD_W - 40),
+    y: seabedTop + 10 + Math.random() * 110,
+    w: 60 + Math.random() * 140,
+    h: 20 + Math.random() * 40,
+    tint: ["#4b5563", "#374151", "#6b7280"][Math.floor(Math.random() * 3)],
+  }));
+  // 珊瑚
+  const corals: Coral[] = Array.from({ length: 10 }, () => ({
+    x: 20 + Math.random() * (WORLD_W - 40),
+    y: seabedTop - 6,
+    size: 26 + Math.random() * 36,
+    color: ["#f472b6", "#fb7185", "#f97316", "#ef4444"][Math.floor(Math.random() * 4)],
+    arms: 4 + Math.floor(Math.random() * 3),
+    swaySpeed: 0.22 + Math.random() * 0.18, // 0.22~0.40 rad/s 更慢更自然
+    swayPhase: Math.random() * Math.PI * 2,
+  }));
+  // 贝壳
+  const shells: Shell[] = Array.from({ length: 14 }, () => ({
+    x: 20 + Math.random() * (WORLD_W - 40),
+    y: seabedTop + 20 + Math.random() * 120,
+    size: 8 + Math.random() * 10,
+    color: ["#f5d0fe", "#fde68a", "#fecaca", "#bae6fd"][Math.floor(Math.random() * 4)],
+  }));
+  // 远处小鱼群（暗色剪影）
+  const schools: FishSchool[] = Array.from({ length: 3 }, (_, i) => ({
+    y: 180 + Math.random() * (WORLD_H * 0.35),
+    count: 10 + Math.floor(Math.random() * 14),
+    speed: 12 + Math.random() * 18,
+    amp: 16 + Math.random() * 24,
+    scale: 0.6 + Math.random() * 0.8,
+    alpha: 0.06 + Math.random() * 0.08,
+    phase: Math.random() * Math.PI * 2,
+  }));
+  // 气泡柱
+  const bubbles: BubbleCol[] = Array.from({ length: 10 }, () => ({
+    x: 20 + Math.random() * (WORLD_W - 40),
+    speed: 24 + Math.random() * 32,
+    phase: Math.random() * 1000,
+  }));
+  // 水母（上浮）
+  const jellies: Jelly[] = Array.from({ length: 6 }, () => ({
+    x: 40 + Math.random() * (WORLD_W - 80),
+    y0: WORLD_H - 260 - Math.random() * 800,
+    speed: 6 + Math.random() * 10,
+    amp: 12 + Math.random() * 20,
+    phase: Math.random() * Math.PI * 2,
+    scale: 0.7 + Math.random() * 0.6,
+    alpha: 0.08 + Math.random() * 0.08,
+  }));
+  // 黄貂鱼（水平滑行）
+  const rays: RayMob[] = Array.from({ length: 2 }, () => ({
+    y: 220 + Math.random() * (WORLD_H * 0.45),
+    speed: 18 + Math.random() * 22,
+    amp: 24 + Math.random() * 20,
+    scale: 0.9 + Math.random() * 0.5,
+    alpha: 0.10 + Math.random() * 0.06,
+    dir: Math.random() < 0.5 ? 1 : -1,
+    phase: Math.random() * Math.PI * 2,
+  }));
+  // 海龟（缓慢滑行）
+  const turtles: TurtleMob[] = Array.from({ length: 2 }, () => ({
+    y: 260 + Math.random() * (WORLD_H * 0.35),
+    speed: 10 + Math.random() * 14,
+    amp: 18 + Math.random() * 16,
+    scale: 0.8 + Math.random() * 0.6,
+    alpha: 0.12 + Math.random() * 0.06,
+    dir: Math.random() < 0.5 ? 1 : -1,
+    phase: Math.random() * Math.PI * 2,
+  }));
+  // 螃蟹（海床来回）
+  const crabs: CrabMob[] = Array.from({ length: 4 }, () => ({
+    x0: 40 + Math.random() * (WORLD_W - 80),
+    y: seabedTop + 130 + Math.random() * 25,
+    speed: 16 + Math.random() * 18,
+    dir: Math.random() < 0.5 ? 1 : -1,
+    range: 120 + Math.random() * 160,
+    scale: 0.8 + Math.random() * 0.6,
+  }));
+
+  decorRef.current = { kelp, rocks, corals, shells, schools, bubbles, jellies, rays, turtles, crabs };
+}
+
+function drawRock(ctx: CanvasRenderingContext2D, r: Rock) {
+  ctx.save();
+  const grd = ctx.createLinearGradient(r.x, r.y - r.h, r.x, r.y + r.h);
+  grd.addColorStop(0, "rgba(255,255,255,0.06)");
+  grd.addColorStop(1, "rgba(0,0,0,0.20)");
+  ctx.fillStyle = r.tint;
+  ctx.beginPath();
+  ctx.ellipse(r.x, r.y, r.w * 0.5, r.h * 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalCompositeOperation = "overlay";
+  ctx.fillStyle = grd; ctx.beginPath();
+  ctx.ellipse(r.x, r.y, r.w * 0.5, r.h * 0.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawCoral(ctx: CanvasRenderingContext2D, c: Coral, t: number) {
+  ctx.save();
+  ctx.translate(c.x, c.y);
+  ctx.fillStyle = c.color;
+  const n = c.arms;
+  for (let i = 0; i < n; i++) {
+    const a = (-Math.PI / 2) + (i - (n - 1) / 2) * 0.5;
+    const sway = Math.sin(t * c.swaySpeed + i * 0.9 + c.swayPhase) * 0.08; // 降低幅度
+    ctx.beginPath();
+    ctx.ellipse(Math.cos(a + sway) * c.size * 0.3, -Math.abs(Math.sin(a + sway)) * c.size * 0.8, c.size * 0.35, c.size * 0.22, a + sway, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawShell(ctx: CanvasRenderingContext2D, s: Shell) {
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.fillStyle = s.color;
+  ctx.beginPath();
+  ctx.moveTo(-s.size, 0);
+  ctx.quadraticCurveTo(0, -s.size * 1.2, s.size, 0);
+  ctx.quadraticCurveTo(0, s.size * 0.6, -s.size, 0);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.10)";
+  ctx.lineWidth = 1;
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * s.size * 0.35, -s.size * 0.2);
+    ctx.quadraticCurveTo(i * s.size * 0.35, 0, i * s.size * 0.35, s.size * 0.2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawKelp(ctx: CanvasRenderingContext2D, k: Kelp, seabedTop: number, t: number) {
+  const baseX = k.x;
+  const baseY = seabedTop + 2;
+  const sway = Math.sin(t * 0.8 + k.phase) * 16;
+  const tipX = baseX + sway;
+  const tipY = baseY - k.height;
+  ctx.save();
+  ctx.strokeStyle = `hsl(${k.hue} 45% 28%)`;
+  ctx.lineWidth = k.thickness;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(baseX, baseY);
+  // 两段贝塞尔模拟海草柔软弯曲
+  ctx.bezierCurveTo(baseX - 12, baseY - k.height * 0.35, baseX + 28, baseY - k.height * 0.7, tipX, tipY);
+  ctx.stroke();
+  // 叶片
+  ctx.fillStyle = `hsl(${k.hue} 55% 38%)`;
+  for (let i = 0; i < 4; i++) {
+    const ry = baseY - (k.height * (0.25 + i * 0.18));
+    const rx = baseX + Math.sin(t * 0.8 + k.phase + i * 0.7) * (10 + i * 2);
+    ctx.beginPath();
+    ctx.ellipse(rx, ry, 6 + i, 10 + i * 2, (Math.PI / 6) * Math.sin(t + i), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawFishSchool(ctx: CanvasRenderingContext2D, s: FishSchool, t: number) {
+  ctx.save();
+  ctx.globalAlpha = s.alpha;
+  const xOffset = (t * s.speed * 40 + s.phase * 200) % (WORLD_W + 200) - 100;
+  for (let i = 0; i < s.count; i++) {
+    const x = (xOffset + i * 26) % (WORLD_W + 120) - 60;
+    const y = s.y + Math.sin((i * 0.6) + t * 1.2 + s.phase) * s.amp;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(s.scale, s.scale);
+    ctx.fillStyle = "#0b1b2b";
+    ctx.beginPath();
+    ctx.moveTo(8, 0);
+    ctx.quadraticCurveTo(-6, -4, -18, 0);
+    ctx.quadraticCurveTo(-6, 4, 8, 0);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawBubbleColumn(ctx: CanvasRenderingContext2D, b: BubbleCol, seabedTop: number, t: number) {
+  const N = 4;
+  for (let i = 0; i < N; i++) {
+    const local = (t * b.speed + b.phase + i * 90) % (seabedTop + 160);
+    const y = seabedTop + 120 - local;
+    const x = b.x + Math.sin((t * 1.2) + i) * 6;
+    const r = 2.2 + (i % 2) * 1.2;
+    if (y < -20) continue;
+    ctx.save();
+    ctx.globalAlpha = 0.20 + 0.15 * Math.sin((t + i) * 2);
+    ctx.fillStyle = "#e0f2fe";
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 0.6;
+    ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.5, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+}
+
 function drawOceanBackground(ctx: CanvasRenderingContext2D, now: number) {
+  initOceanDecor();
   // 1) 深海渐变
   const grd = ctx.createLinearGradient(0, 0, 0, WORLD_H);
   grd.addColorStop(0.00, "#0e7490"); // 浅青
@@ -393,7 +633,7 @@ function drawOceanBackground(ctx: CanvasRenderingContext2D, now: number) {
   ctx.fillStyle = grd;
   ctx.fillRect(0, 0, WORLD_W, WORLD_H);
 
-  // 2) 顶部光斑（轻量"海水光斑"效果，随时间缓慢下移）
+  // 2) 顶部光斑
   ctx.save();
   ctx.globalAlpha = 0.12;
   for (let i = 0; i < 5; i++) {
@@ -405,7 +645,15 @@ function drawOceanBackground(ctx: CanvasRenderingContext2D, now: number) {
   }
   ctx.restore();
 
-  // 3) 沙地（底部 180px）
+  // 3) 远处鱼群 + 中景移动生物（水母/黄貂鱼/海龟）
+  if (decorRef.current) {
+    for (const s of decorRef.current.schools) drawFishSchool(ctx, s, now);
+    for (const j of decorRef.current.jellies) drawJelly(ctx, j, now);
+    for (const r of decorRef.current.rays) drawRayMob(ctx, r, now);
+    for (const tb of decorRef.current.turtles) drawTurtleMob(ctx, tb, now);
+  }
+
+  // 4) 沙地
   const seabedTop = WORLD_H - 180;
   const sand = ctx.createLinearGradient(0, seabedTop, 0, WORLD_H);
   sand.addColorStop(0, "#f1e2a9");
@@ -413,7 +661,7 @@ function drawOceanBackground(ctx: CanvasRenderingContext2D, now: number) {
   ctx.fillStyle = sand;
   ctx.fillRect(0, seabedTop, WORLD_W, WORLD_H - seabedTop);
 
-  // 4) 沙丘起伏（柔和阴影）
+  // 5) 沙丘
   ctx.globalAlpha = 0.25;
   for (let i = 0; i < 3; i++) {
     const y0 = seabedTop + 40 + i * 30;
@@ -423,6 +671,16 @@ function drawOceanBackground(ctx: CanvasRenderingContext2D, now: number) {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+
+  // 6) 岩石、珊瑚、贝壳、海草、气泡、螃蟹（底部）
+  if (decorRef.current) {
+    for (const r of decorRef.current.rocks) drawRock(ctx, r);
+    for (const c of decorRef.current.corals) drawCoral(ctx, c, now);
+    for (const s of decorRef.current.shells) drawShell(ctx, s);
+    for (const k of decorRef.current.kelp) drawKelp(ctx, k, seabedTop, now);
+    for (const b of decorRef.current.bubbles) drawBubbleColumn(ctx, b, seabedTop, now);
+    for (const cb of decorRef.current.crabs) drawCrabMob(ctx, cb, now);
+  }
 }
 
 export default function App(){
@@ -1043,7 +1301,10 @@ function toCloudPayload(): CloudSave {
 
   // —— UI/绘制饲料 —— //
   function drawFood(ctx:CanvasRenderingContext2D, fd:Food, now:number){
-    if(fd.kind==="common"){ ctx.fillStyle="#8b5e3c"; ctx.beginPath(); ctx.arc(fd.x,fd.y,fd.r,0,Math.PI*2); ctx.fill(); return; }
+    if(fd.kind==="common"){
+      ctx.fillStyle="#8b5e3c";
+      ctx.beginPath(); ctx.arc(fd.x,fd.y,fd.r,0,Math.PI*2); ctx.fill(); return;
+    }
     if(fd.kind==="uncommon"){
       const pulse=0.5+0.5*Math.sin(now*4+fd.id);
       ctx.save(); ctx.globalAlpha=0.35+0.35*pulse; ctx.strokeStyle="rgba(55,199,212,0.8)"; ctx.lineWidth=2;
@@ -1052,11 +1313,40 @@ function toCloudPayload(): CloudSave {
       grd.addColorStop(0,"#8ef3ff"); grd.addColorStop(1,"#37c7d4"); ctx.fillStyle=grd;
       ctx.beginPath(); ctx.arc(fd.x,fd.y,fd.r,0,Math.PI*2); ctx.fill(); return;
     }
-    const twinkle=0.6+0.4*Math.sin(now*6+fd.id);
-    ctx.save(); const glowR=fd.r+7+twinkle*3; const glow=ctx.createRadialGradient(fd.x,fd.y,0,fd.x,fd.y,glowR);
-    glow.addColorStop(0,"rgba(255,215,0,0.9)"); glow.addColorStop(1,"rgba(255,215,0,0.05)");
-    ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(fd.x,fd.y,glowR,0,Math.PI*2); ctx.fill();
-    ctx.translate(fd.x,fd.y); ctx.rotate((Math.PI/6)*twinkle); ctx.fillStyle="#ffd700"; drawStar(ctx,5,fd.r+2,Math.max(2,fd.r-2)); ctx.fill(); ctx.restore();
+    if(fd.kind==="rare"){
+      const twinkle=0.6+0.4*Math.sin(now*6+fd.id);
+      ctx.save(); const glowR=fd.r+7+twinkle*3; const glow=ctx.createRadialGradient(fd.x,fd.y,0,fd.x,fd.y,glowR);
+      glow.addColorStop(0,"rgba(255,215,0,0.9)"); glow.addColorStop(1,"rgba(255,215,0,0.05)");
+      ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(fd.x,fd.y,glowR,0,Math.PI*2); ctx.fill();
+      ctx.translate(fd.x,fd.y); ctx.rotate((Math.PI/6)*twinkle); ctx.fillStyle="#ffd700"; drawStar(ctx,5,fd.r+2,Math.max(2,fd.r-2)); ctx.fill(); ctx.restore();
+      return;
+    }
+    if(fd.kind==="epic"){
+      // 紫色脉冲+星星
+      const pulse=0.5+0.5*Math.sin(now*5+fd.id);
+      ctx.save(); ctx.globalAlpha=0.32+0.32*pulse; ctx.strokeStyle="#a78bfa"; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(fd.x,fd.y,fd.r+6+pulse*3,0,Math.PI*2); ctx.stroke(); ctx.restore();
+      const grd=ctx.createRadialGradient(fd.x,fd.y,0,fd.x,fd.y,fd.r+2);
+      grd.addColorStop(0,"#c4b5fd"); grd.addColorStop(1,"#7c3aed"); ctx.fillStyle=grd;
+      ctx.beginPath(); ctx.arc(fd.x,fd.y,fd.r,0,Math.PI*2); ctx.fill();
+      ctx.save(); ctx.translate(fd.x,fd.y); ctx.rotate((Math.PI/5)*pulse); ctx.fillStyle="#a78bfa"; drawStar(ctx,6,fd.r+3,Math.max(2,fd.r-3)); ctx.fill(); ctx.restore();
+      return;
+    }
+    if(fd.kind==="legendary"){
+      // 彩虹光晕+大星星
+      const twinkle=0.7+0.3*Math.sin(now*7+fd.id);
+      ctx.save();
+      const glowR=fd.r+10+twinkle*4;
+      const glow=ctx.createRadialGradient(fd.x,fd.y,0,fd.x,fd.y,glowR);
+      glow.addColorStop(0,"rgba(255,255,255,0.95)");
+      glow.addColorStop(0.3,"#f472b6");
+      glow.addColorStop(0.5,"#60a5fa");
+      glow.addColorStop(0.7,"#34d399");
+      glow.addColorStop(1,"rgba(255,255,255,0.05)");
+      ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(fd.x,fd.y,glowR,0,Math.PI*2); ctx.fill();
+      ctx.translate(fd.x,fd.y); ctx.rotate((Math.PI/7)*twinkle); ctx.fillStyle="#fbbf24"; drawStar(ctx,7,fd.r+5,Math.max(3,fd.r-4)); ctx.fill(); ctx.restore();
+      return;
+    }
   }
 
   // 按钮条 + 画布 + 绘鱼面板
@@ -1127,11 +1417,10 @@ function toCloudPayload(): CloudSave {
         ref={containerRef}
         className="
           w-full
-          h-[min(72svh,72vh)]
-          sm:h-[70vh] md:h-[68vh]
-          lg:aspect-[16/9]
-          min-h-[240px] max-h-[calc(100svh-120px)]
-          rounded-2xl overflow-hidden shadow-inner bg-sky-50 border border-sky-100
+          max-w-full
+          h-[60dvh] sm:h-[70vh] md:h-[68vh] lg:aspect-[16/9]
+          min-h-[220px] max-h-[calc(100svh-80px)]
+          rounded-2xl overflow-auto shadow-inner bg-sky-50 border border-sky-100
         "
         style={{ paddingBottom: 'env(safe-area-inset-bottom,0px)' }}
       >
@@ -1282,6 +1571,39 @@ function toCloudPayload(): CloudSave {
         />
       )}
       
+      {/* === 鱼类体积排行榜 === */}
+      <div className="w-full max-w-5xl mx-auto mt-2 mb-4 px-2">
+        <div className="bg-white/80 rounded-xl shadow border p-2 text-sm overflow-x-auto">
+          <div className="font-semibold mb-1">🐟 鱼类体积排行榜（仅显示有主人的鱼）</div>
+          <table className="w-full text-left">
+            <thead>
+              <tr className="text-slate-500 border-b">
+                <th className="py-1 pr-2">排名</th>
+                <th className="py-1 pr-2">主人</th>
+                <th className="py-1 pr-2">体积</th>
+                <th className="py-1 pr-2">昵称</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fishRef.current
+                .filter(f => f.ownerName && f.ownerName.trim())
+                .sort((a, b) => (b.sizeScale ?? 1) - (a.sizeScale ?? 1))
+                .slice(0, 10)
+                .map((f, i) => (
+                  <tr key={f.id} className="border-b last:border-0">
+                    <td className="py-1 pr-2">{i + 1}</td>
+                    <td className="py-1 pr-2 font-medium text-sky-700">{f.ownerName}</td>
+                    <td className="py-1 pr-2">{(f.sizeScale ?? 1).toFixed(3)}</td>
+                    <td className="py-1 pr-2 text-slate-600">{f.petName || '-'}</td>
+                  </tr>
+                ))}
+              {fishRef.current.filter(f => f.ownerName && f.ownerName.trim()).length === 0 && (
+                <tr><td colSpan={4} className="text-center text-slate-400 py-2">暂无有主人的鱼</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1487,4 +1809,91 @@ function FishDesigner({ onCancel, onCreate }: {
       </div>
     </div>
   );
+}
+
+function drawJelly(ctx: CanvasRenderingContext2D, j: Jelly, t: number) {
+  const x = j.x + Math.sin(t * 0.6 + j.phase) * j.amp;
+  const y = j.y0 + (t * j.speed * -12) % (WORLD_H + 200);
+  const yy = ((y % (WORLD_H + 200)) + (WORLD_H + 200)) % (WORLD_H + 200) - 100;
+  ctx.save();
+  ctx.globalAlpha = j.alpha;
+  ctx.translate(x, yy);
+  ctx.scale(j.scale, j.scale);
+  // 伞盖
+  const r = 20;
+  const g = ctx.createRadialGradient(0, -r * 0.4, 2, 0, 0, r * 1.2);
+  g.addColorStop(0, "rgba(255,255,255,0.9)");
+  g.addColorStop(1, "rgba(186,230,253,0.2)");
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, 0); ctx.quadraticCurveTo(r * 0.6, r * 0.6, 0, r * 0.9); ctx.quadraticCurveTo(-r * 0.6, r * 0.6, -r, 0); ctx.fill();
+  // 触手
+  ctx.strokeStyle = "rgba(186,230,253,0.5)"; ctx.lineWidth = 1.2;
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * 4, r * 0.2);
+    const sway = Math.sin(t * 1.2 + i + j.phase) * 8;
+    ctx.quadraticCurveTo(i * 4 + sway, r * 0.8, i * 4 + sway * 0.6, r * 1.6);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawRayMob(ctx: CanvasRenderingContext2D, r: RayMob, t: number) {
+  const x = ((t * r.speed * 40 * r.dir) % (WORLD_W + 200)) + (r.dir === 1 ? -100 : WORLD_W + 100);
+  const y = r.y + Math.sin(t * 0.8 + r.phase) * r.amp;
+  ctx.save();
+  ctx.globalAlpha = r.alpha;
+  ctx.translate(x, y);
+  if (r.dir === -1) ctx.scale(-1, 1);
+  ctx.scale(r.scale, r.scale);
+  ctx.fillStyle = "#0b1b2b";
+  ctx.beginPath();
+  ctx.moveTo(28, 0);
+  ctx.quadraticCurveTo(0, -18, -36, -4);
+  ctx.quadraticCurveTo(-18, 0, -36, 4);
+  ctx.quadraticCurveTo(0, 18, 28, 0);
+  ctx.fill();
+  // 尾鞭
+  ctx.strokeStyle = "#0b1b2b"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-36, 0); ctx.quadraticCurveTo(-52, 2 * Math.sin(t + r.phase), -70, 0); ctx.stroke();
+  ctx.restore();
+}
+
+function drawTurtleMob(ctx: CanvasRenderingContext2D, m: TurtleMob, t: number) {
+  const x = ((t * m.speed * 30 * m.dir) % (WORLD_W + 200)) + (m.dir === 1 ? -100 : WORLD_W + 100);
+  const y = m.y + Math.sin(t * 0.7 + m.phase) * m.amp;
+  ctx.save();
+  ctx.globalAlpha = m.alpha;
+  ctx.translate(x, y);
+  if (m.dir === -1) ctx.scale(-1, 1);
+  ctx.scale(m.scale, m.scale);
+  // 甲壳
+  ctx.fillStyle = "#1e293b";
+  ctx.beginPath(); ctx.ellipse(0, 0, 18, 12, 0, 0, Math.PI * 2); ctx.fill();
+  // 头
+  ctx.beginPath(); ctx.ellipse(20, 0, 6, 4, 0, 0, Math.PI * 2); ctx.fill();
+  // 鳍（摆动）
+  const flap = Math.sin(t * 3 + m.phase) * 0.6;
+  ctx.save(); ctx.translate(-6, -8); ctx.rotate(flap); ctx.beginPath(); ctx.ellipse(0, 0, 8, 4, 0.5, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  ctx.save(); ctx.translate(-6, 8); ctx.rotate(-flap); ctx.beginPath(); ctx.ellipse(0, 0, 8, 4, -0.5, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  ctx.restore();
+}
+
+function drawCrabMob(ctx: CanvasRenderingContext2D, c: CrabMob, t: number) {
+  const x = c.x0 + Math.sin(t * c.speed * 0.2) * c.range * c.dir;
+  ctx.save();
+  ctx.translate(x, c.y);
+  ctx.scale(c.scale, c.scale);
+  ctx.fillStyle = "#7f1d1d";
+  // 身体
+  ctx.beginPath(); ctx.ellipse(0, 0, 10, 6, 0, 0, Math.PI * 2); ctx.fill();
+  // 螯
+  ctx.beginPath(); ctx.ellipse(12, -2, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(12, 2, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
+  // 腿
+  ctx.strokeStyle = "#7f1d1d"; ctx.lineWidth = 2;
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath(); ctx.moveTo(-6, i * 2); ctx.lineTo(-12 - 4 * Math.sin(t * 3 + i), i * 3); ctx.stroke();
+  }
+  ctx.restore();
 }
