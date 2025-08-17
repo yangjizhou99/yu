@@ -20,7 +20,7 @@ import { useI18n } from "./i18n";
 
 // ====== 世界/相机参数 ======
 const WORLD_W = 2048;
-const WORLD_H = 1152;
+const WORLD_H = 1550;
 const SCALE_MIN = 0.3;
 const SCALE_MAX = 3.0;
 const ZOOM_STEP = 1.15; // 按钮缩放步长
@@ -34,7 +34,6 @@ const FISH_VISION = 160;
 const EAT_RADIUS = 14;
 const MAX_FISH_BASE = 80;
 const SIZE_SCALE_MAX = 2.5; // 体型上限
-
 // —— 饲料（降低总体成长：期望≈0.684%/颗） ——
 type FoodKind = "common" | "uncommon" | "rare" | "epic" | "legendary";
 const FOOD_VARIANTS = [
@@ -788,6 +787,21 @@ export default function App(){
   // 贴图选择器状态
   const [showTexPicker, setShowTexPicker] = useState(false);
 
+  // 开发者模式状态
+  const [showDevButtons, setShowDevButtons] = useState(false);
+  const [devPassword, setDevPassword] = useState("");
+
+  // 开发者模式密码验证
+  const checkDevPassword = () => {
+    if (devPassword === "9251") {
+      setShowDevButtons(true);
+      setDevPassword("");
+    } else {
+      alert("密码错误！");
+      setDevPassword("");
+    }
+  };
+
   // 存档：节流保存
   const dirtyRef = useRef(false); const saveTimerRef = useRef<number|null>(null);
   function saveToStorage(){ const data:SaveDataV3={version:3,nextId:nextIdRef.current,fish:fishRef.current,food:foodRef.current,savedAt:new Date().toISOString()}; 
@@ -1184,7 +1198,7 @@ function toCloudPayload(): CloudSave {
       e.preventDefault();
       return;
     }
-    // 触摸端：单指先标记为“可能拖拽”，超过阈值才真正开始拖拽
+    // 触摸端：单指先标记为"可能拖拽"，超过阈值才真正开始拖拽
     if(e.pointerType==="touch"){
       touchMaybePanRef.current={active:true,id:e.pointerId,startSX:sx,startSY:sy};
     }
@@ -1213,7 +1227,7 @@ function toCloudPayload(): CloudSave {
       e.preventDefault();
       return;
     }
-    // 触摸：如果是“可能拖拽”，当移动超过阈值（像素）则启动拖拽
+    // 触摸：如果是"可能拖拽"，当移动超过阈值（像素）则启动拖拽
     if(e.pointerType==="touch" && touchMaybePanRef.current?.active && touchMaybePanRef.current.id===e.pointerId && !panningRef.current){
       const dx=sx-touchMaybePanRef.current.startSX; const dy=sy-touchMaybePanRef.current.startSY;
       const MOVE_THRESHOLD=6;
@@ -1309,7 +1323,7 @@ function toCloudPayload(): CloudSave {
       // 饲料（视口裁剪）
       for(const fd of foodRef.current){ if (circleIntersects(view, fd.x, fd.y, fd.r+14, 40)) drawFood(ctx,fd,now); }
 
-      // 绘制“我的鱼”吐出的泡泡（在鱼之前一层，避免被背景遮）
+      // 绘制"我的鱼"吐出的泡泡（在鱼之前一层，避免被背景遮）
       if (fishBubblesRef.current.length) {
         const arr = fishBubblesRef.current;
         for (let i = arr.length - 1; i >= 0; i--) {
@@ -1350,7 +1364,7 @@ function toCloudPayload(): CloudSave {
         f.vx=lerp(f.vx,dvx,FISH_TURN_SMOOTH); f.vy=lerp(f.vy,dvy,FISH_TURN_SMOOTH);
         f.x+=f.vx*dt; f.y+=f.vy*dt;
 
-        // —— 给“我的鱼”吐泡泡 ——
+        // —— 给"我的鱼"吐泡泡 ——
         const isMyFish = (currentUidRef.current && (f as any).ownerUid && (f as any).ownerUid === currentUidRef.current)
           || (!(f as any).ownerUid && f.ownerName && myOwnerNameRef.current && f.ownerName.trim() === myOwnerNameRef.current.trim());
         if (isMyFish) {
@@ -1580,36 +1594,60 @@ function toCloudPayload(): CloudSave {
           <button onClick={resetView} className="px-2 py-1 rounded-2xl bg-slate-200 hover:bg-slate-300">⟳ {t("btn.zoom.reset")}</button>
           <button onClick={fitAll} className="px-2 py-1 rounded-2xl bg-slate-200 hover:bg-slate-300">⤢ {t("btn.zoom.fitAll")}</button>
 
-          <button onClick={addFish} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
-            bg-sky-500 text-white hover:bg-sky-600 active:scale-[0.98]">{t("btn.addFish")}</button>
-          
-          <div className="relative">
-            <button
-              onClick={() => setShowTexPicker(v => !v)}
-              className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm bg-indigo-500 text-white hover:bg-indigo-600"
-              title={t("texPicker.title")}
-            >{t("btn.openTexPicker")}</button>
-
-            {showTexPicker && (
-              <div className="absolute right-0 mt-2 w-[360px] p-2 bg-white rounded-xl shadow-lg border grid grid-cols-3 gap-2 z-50">
-                {TEXTURE_PACK.map(t => (
-                  <button key={t.key}
-                    onClick={() => { addFishFromDef(t); setShowTexPicker(false); }}
-                    className="group rounded-lg border hover:shadow-sm overflow-hidden text-xs">
-                    <img src={t.preview} alt={t.label} className="w-full h-[60px] object-cover" />
-                    <div className="px-2 py-1 text-center">{t.label}</div>
-                  </button>
-                ))}
-              </div>
-            )}
+          {/* 开发者模式密码输入 */}
+          <div className="flex items-center gap-1">
+            <input
+              type="password"
+              value={devPassword}
+              onChange={(e) => setDevPassword(e.target.value)}
+              placeholder="开发者密码"
+              className="px-2 py-1 text-sm rounded-lg border bg-white w-24"
+              onKeyDown={(e) => e.key === "Enter" && checkDevPassword()}
+            />
+            <button 
+              onClick={checkDevPassword}
+              className="px-2 py-1 text-sm rounded-lg bg-gray-500 text-white hover:bg-gray-600"
+            >
+              确认
+            </button>
           </div>
 
-          <button onClick={openDesigner} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
-            bg-violet-500 text-white hover:bg-violet-600 active:scale-[0.98]">{t("btn.openDesigner")}</button>
-          <button onClick={openOutlineEditor} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
-            bg-emerald-500 text-white hover:bg-emerald-600 active:scale-[0.98]">{t("btn.openOutlineEditor")}</button>
-          <button onClick={()=>{ fishRef.current=[]; setFishCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-slate-200 hover:bg-slate-300">{t("btn.clearFish")}</button>
-          <button onClick={()=>{ foodRef.current=[]; setFoodCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-amber-200 hover:bg-amber-300">{t("btn.clearFood")}</button>
+          {showDevButtons && (
+            <>
+              <button onClick={addFish} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
+                bg-sky-500 text-white hover:bg-sky-600 active:scale-[0.98]">{t("btn.addFish")}</button>
+              
+              <div className="relative">
+                <button
+                  onClick={() => setShowTexPicker(v => !v)}
+                  className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm bg-indigo-500 text-white hover:bg-indigo-600"
+                  title={t("texPicker.title")}
+                >{t("btn.openTexPicker")}</button>
+
+                {showTexPicker && (
+                  <div className="absolute right-0 mt-2 w-[360px] p-2 bg-white rounded-xl shadow-lg border grid grid-cols-3 gap-2 z-50">
+                    {TEXTURE_PACK.map(t => (
+                      <button key={t.key}
+                        onClick={() => { addFishFromDef(t); setShowTexPicker(false); }}
+                        className="group rounded-lg border hover:shadow-sm overflow-hidden text-xs">
+                        <img src={t.preview} alt={t.label} className="w-full h-[60px] object-cover" />
+                        <div className="px-2 py-1 text-center">{t.label}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <button onClick={openDesigner} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
+                bg-violet-500 text-white hover:bg-violet-600 active:scale-[0.98]">{t("btn.openDesigner")}</button>
+              <button onClick={openOutlineEditor} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
+                bg-emerald-500 text-white hover:bg-emerald-600 active:scale-[0.98]">{t("btn.openOutlineEditor")}</button>
+              <button onClick={()=>{ fishRef.current=[]; setFishCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-slate-200 hover:bg-slate-300">{t("btn.clearFish")}</button>
+              <button onClick={()=>{ foodRef.current=[]; setFoodCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-amber-200 hover:bg-amber-300">{t("btn.clearFood")}</button>
+              <button onClick={clearSaveAndReset} className="px-3 py-1.5 rounded-2xl bg-rose-200 hover:bg-rose-300">{t("btn.clearSave")}</button>
+            </>
+          )}
+
           <button
             onClick={() => {
               const base = (import.meta as any).env.BASE_URL || "/";
@@ -1620,8 +1658,6 @@ function toCloudPayload(): CloudSave {
             bg-emerald-500 text-white hover:bg-emerald-600"
             title={t("share.title")}
           >{t("btn.share")}</button>
-
-          <button onClick={clearSaveAndReset} className="px-3 py-1.5 rounded-2xl bg-rose-200 hover:bg-rose-300">{t("btn.clearSave")}</button>
 
           <div className="flex items-center gap-1 ml-2">
             <span className="text-sm text-slate-600">{t("lang.label")}:</span>
