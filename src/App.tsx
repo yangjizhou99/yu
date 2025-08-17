@@ -48,6 +48,7 @@ const FOOD_VARIANTS = [
 // —— 存档（v3） ——
 const STORAGE_KEY_V3 = "fish-pond-save-v3";
 const POND_ID_KEY = "pond-id";
+const OWNER_NAME_KEY = "my-owner-name";
 
 function resolvePondId(): string {
   const url = new URL(window.location.href);
@@ -97,6 +98,7 @@ type FishShape = "angelfish" | "swordfish" | "longtail";
 interface Fish {
   id: number; x: number; y: number; vx: number; vy: number; speed: number;
   sizeScale: number; color: string; vision: number; targetFoodId: number|null; wanderT: number;
+  ownerUid: string | null;
   ownerName: string | null;
   petName: string | null;
   textureDataUrl: string | null;
@@ -107,6 +109,7 @@ interface Fish {
 }
 type TexCache = Map<number, HTMLImageElement>;
 type Camera = { x: number; y: number; scale: number };
+type FishBubble = { id:number; x:number; y:number; vx:number; vy:number; r:number; born:number; life:number };
 
 function randomFishColor() { const hues=[195,205,215,165,180,200,30,350]; const h=hues[Math.floor(Math.random()*hues.length)];
   const s=Math.floor(rand(55,85)); const l=Math.floor(rand(45,65)); return `hsl(${h} ${s}% ${l}%)`; }
@@ -744,6 +747,11 @@ export default function App(){
 
   // 纹理缓存
   const texCacheRef = useRef<TexCache>(new Map());
+  const currentUidRef = useRef<string|null>(null);
+  const myOwnerNameRef = useRef<string|null>(null);
+  const fishBubblesRef = useRef<FishBubble[]>([]);
+  const lastBubbleEmitRef = useRef<Map<number, number>>(new Map());
+  const nextBubbleIdRef = useRef(1);
 
   // 相机
   const camRef = useRef<Camera>({ x:(WORLD_W-1280)/2, y:(WORLD_H-720)/2, scale:1 });
@@ -814,6 +822,7 @@ function toCloudPayload(): CloudSave {
     color: f.color, vision: f.vision,
     targetFoodId: f.targetFoodId ?? null,   // ⬅️ null 而不是 undefined
     wanderT: f.wanderT,
+    ownerUid: f.ownerUid ?? null,
     ownerName: f.ownerName ?? null,
     petName:  f.petName  ?? null,
     shape:    f.shape    ?? null,
@@ -961,6 +970,11 @@ function toCloudPayload(): CloudSave {
   // 初始化时读取版本号
   useEffect(() => { loadLocalRev(pondId); }, []);
 
+  // 读取本机保存的用户名字（用于旧数据高亮回退）
+  useEffect(() => {
+    try { myOwnerNameRef.current = localStorage.getItem(OWNER_NAME_KEY); } catch {}
+  }, []);
+
   // 加载存档
   useEffect(()=>{
     resizeCanvas();
@@ -1076,6 +1090,7 @@ function toCloudPayload(): CloudSave {
     const f:Fish={ id, x:rand(cam.x+40,cam.x+viewW-40), y:rand(cam.y+40,cam.y+viewH-40),
       vx:Math.cos(angle)*spd, vy:Math.sin(angle)*spd, speed:spd, sizeScale:rand(0.9,1.1),
       color:randomFishColor(), vision:FISH_VISION, targetFoodId:null, wanderT:rand(0,1000),
+      ownerUid: null,
       ownerName: null, petName: null, textureDataUrl: null, textureId: null, shape: "angelfish",
       shapeKey: null, textureSvg: null };
     fishRef.current.push(f);
@@ -1117,6 +1132,7 @@ function toCloudPayload(): CloudSave {
       vision: FISH_VISION,
       targetFoodId: null,
       wanderT: rand(0, 1000),
+      ownerUid: null,
       ownerName: null,
       petName: def.label ?? null,
       textureDataUrl: dataUrl,
@@ -1293,6 +1309,32 @@ function toCloudPayload(): CloudSave {
       // 饲料（视口裁剪）
       for(const fd of foodRef.current){ if (circleIntersects(view, fd.x, fd.y, fd.r+14, 40)) drawFood(ctx,fd,now); }
 
+      // 绘制“我的鱼”吐出的泡泡（在鱼之前一层，避免被背景遮）
+      if (fishBubblesRef.current.length) {
+        const arr = fishBubblesRef.current;
+        for (let i = arr.length - 1; i >= 0; i--) {
+          const b = arr[i];
+          const age = now - b.born;
+          if (age > b.life) { arr.splice(i, 1); continue; }
+          const alpha = Math.max(0, 1 - age / b.life) * 0.9;
+          const k = 1 + age * 0.12;
+          // 受轻微漂移与缓慢上升影响
+          const bx = b.x + b.vx * age * 0.3;
+          const by = b.y + b.vy * age * 0.6;
+          if (!circleIntersects(view, bx, by, b.r * k + 6, 40)) continue;
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = "#e0f2fe";
+          ctx.beginPath(); ctx.arc(bx, by, b.r * k, 0, Math.PI * 2); ctx.fill();
+          // 高光
+          ctx.globalAlpha = alpha * 0.7;
+          ctx.strokeStyle = "rgba(255,255,255,0.8)";
+          ctx.lineWidth = 0.9;
+          ctx.beginPath(); ctx.arc(bx - b.r*0.35*k, by - b.r*0.35*k, b.r * 0.45 * k, 0, Math.PI * 2); ctx.stroke();
+          ctx.restore();
+        }
+      }
+
       // 更新鱼
       const foods=foodRef.current; let ate=false;
       for(const f of fishRef.current){
@@ -1307,6 +1349,25 @@ function toCloudPayload(): CloudSave {
           const nx=-vy, ny=vx; vx+=nx*wobble*0.25; vy+=ny*wobble*0.25; const len2=Math.hypot(vx,vy)||1; dvx=(vx/len2)*effSpeed; dvy=(vy/len2)*effSpeed; }
         f.vx=lerp(f.vx,dvx,FISH_TURN_SMOOTH); f.vy=lerp(f.vy,dvy,FISH_TURN_SMOOTH);
         f.x+=f.vx*dt; f.y+=f.vy*dt;
+
+        // —— 给“我的鱼”吐泡泡 ——
+        const isMyFish = (currentUidRef.current && (f as any).ownerUid && (f as any).ownerUid === currentUidRef.current)
+          || (!(f as any).ownerUid && f.ownerName && myOwnerNameRef.current && f.ownerName.trim() === myOwnerNameRef.current.trim());
+        if (isMyFish) {
+          const nowMs = now * 1000;
+          const lastMs = lastBubbleEmitRef.current.get(f.id) || 0;
+          const intervalMs = 550 + 350 * Math.sin(now * 1.5 + f.id); // 约 0.4~0.9 秒
+          if (nowMs - lastMs > intervalMs) {
+            lastBubbleEmitRef.current.set(f.id, nowMs);
+            const tailX = f.x - Math.cos(Math.atan2(f.vy,f.vx)) * (BASE_FISH_SIZE*f.sizeScale*0.7);
+            const tailY = f.y - Math.sin(Math.atan2(f.vy,f.vx)) * (BASE_FISH_SIZE*f.sizeScale*0.3);
+            const bId = nextBubbleIdRef.current++;
+            const r = 1.6 + Math.random() * 2.2 * f.sizeScale;
+            const rise = 12 + Math.random() * 18;
+            const drift = (Math.random() - 0.5) * 10;
+            fishBubblesRef.current.push({ id:bId, x:tailX, y:tailY, vx:drift, vy:-rise, r, born: now, life: 2.2 + Math.random()*1.4 });
+          }
+        }
 
         // 边界
         const margin=14*f.sizeScale;
@@ -1399,6 +1460,36 @@ function toCloudPayload(): CloudSave {
         ctx.lineWidth = 0.8;
         ctx.strokeStyle = "rgba(0,0,0,0.18)";
         ctx.beginPath(); beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen, bodyH); ctx.stroke();
+
+        // 当前用户鱼的发光描边
+        const isMyFish = (currentUidRef.current && f.ownerUid && f.ownerUid === currentUidRef.current)
+          || (!f.ownerUid && f.ownerName && myOwnerNameRef.current && f.ownerName.trim() === myOwnerNameRef.current.trim()); // 兼容：根据本机 ownerName 高亮
+        if (isMyFish) {
+          // 发光底层光晕（更明显）
+          ctx.save();
+          ctx.globalCompositeOperation = "lighter";
+          const pulse = 0.75 + 0.25 * Math.sin(now * 4 + f.id);
+          const halo = ctx.createRadialGradient(0, 0, bodyH * 0.2, 0, 0, Math.max(bodyLen * 0.95, bodyH * 1.2));
+          halo.addColorStop(0, `rgba(255,255,220,${0.30 + 0.25 * pulse})`);
+          halo.addColorStop(1, "rgba(255,255,220,0.00)");
+          ctx.fillStyle = halo;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, bodyLen * (1.00 + 0.06 * pulse), bodyH * (1.00 + 0.10 * pulse), 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          // 高亮描边（更粗更亮，带阴影）
+          ctx.save();
+          ctx.globalCompositeOperation = "lighter";
+          ctx.shadowBlur = Math.max(14, base * 1.8);
+          ctx.shadowColor = "rgba(255,255,190,0.95)";
+          ctx.globalAlpha = 0.95;
+          ctx.lineWidth = Math.max(2.4, base * 0.18);
+          ctx.strokeStyle = "rgba(255,255,235,0.95)";
+          ctx.beginPath(); beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen * 1.03, bodyH * 1.03);
+          ctx.stroke();
+          ctx.restore();
+        }
 
         // 内暗沿边
         ctx.save();
@@ -1581,7 +1672,7 @@ function toCloudPayload(): CloudSave {
           onCreate={async (ownerName, petName, dataUrl, shape) => {
             if (fishRef.current.length >= currentMaxFish()) { closeDesigner(); return; }
             
-            await ensureAnonAuth(); // 确保已登录
+            const uid = await ensureAnonAuth(); // 确保已登录
             // 1) 计算哈希并把贴图写入 textures 集合（若已存在则跳过）
             const texId = await sha256Base64(dataUrl);
             try {
@@ -1610,6 +1701,7 @@ function toCloudPayload(): CloudSave {
               vision: FISH_VISION,
               targetFoodId: null,
               wanderT: rand(0, 1000),
+              ownerUid: uid ?? null,
               ownerName: ownerName || null,
               petName: petName || null,
               textureDataUrl: dataUrl,   // 立即可见
@@ -1655,7 +1747,7 @@ function toCloudPayload(): CloudSave {
               return;
             }
 
-            await ensureAnonAuth(); // 确保已登录
+            const uid = await ensureAnonAuth(); // 确保已登录
             // 1) 上传贴图并获取 ID
             const texId = await sha256Base64(dataUrl);
             try {
@@ -1685,6 +1777,7 @@ function toCloudPayload(): CloudSave {
               vision: FISH_VISION,
               targetFoodId: null,
               wanderT: rand(0, 1000),
+              ownerUid: uid ?? null,
               ownerName: null,
               petName: null,
               shapeKey: `custom:${currentOutline!.id}`,
@@ -1866,7 +1959,9 @@ function FishDesigner({ onCancel, onCreate }: {
   }
   function clearDrawing(){ const cvs=drawRef.current!, ctx=cvs.getContext("2d")!; ctx.save(); clipToFish(ctx); ctx.clearRect(0,0,CSS_W,CSS_H); ctx.restore(); }
   function handleCreate(){ if(!ownerName.trim()||!petName.trim()){ alert("请填写 用户名字 和 宠物鱼名字"); return; }
-    const dataUrl=drawRef.current!.toDataURL("image/png"); onCreate(ownerName.trim(), petName.trim(), dataUrl, shape); }
+    const dataUrl=drawRef.current!.toDataURL("image/png");
+    try { localStorage.setItem(OWNER_NAME_KEY, ownerName.trim()); } catch {}
+    onCreate(ownerName.trim(), petName.trim(), dataUrl, shape); }
 
   const COLORS=["#ff6b6b","#f59e0b","#22c55e","#3b82f6","#8b5cf6","#222222"];
 
