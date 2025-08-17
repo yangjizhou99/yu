@@ -1341,8 +1341,8 @@ function toCloudPayload(): CloudSave {
           ctx.fillStyle = "#e0f2fe";
           ctx.beginPath(); ctx.arc(bx, by, b.r * k, 0, Math.PI * 2); ctx.fill();
           // 高光
-          ctx.globalAlpha = alpha * 0.7;
-          ctx.strokeStyle = "rgba(255,255,255,0.8)";
+          ctx.globalAlpha = alpha * 0.35;
+          ctx.strokeStyle = "rgba(255,255,255,0.4)";
           ctx.lineWidth = 0.9;
           ctx.beginPath(); ctx.arc(bx - b.r*0.35*k, by - b.r*0.35*k, b.r * 0.45 * k, 0, Math.PI * 2); ctx.stroke();
           ctx.restore();
@@ -1479,28 +1479,29 @@ function toCloudPayload(): CloudSave {
         const isMyFish = (currentUidRef.current && f.ownerUid && f.ownerUid === currentUidRef.current)
           || (!f.ownerUid && f.ownerName && myOwnerNameRef.current && f.ownerName.trim() === myOwnerNameRef.current.trim()); // 兼容：根据本机 ownerName 高亮
         if (isMyFish) {
-          // 发光底层光晕（更明显）
+          // 发光底层光晕（弱化）
           ctx.save();
           ctx.globalCompositeOperation = "lighter";
           const pulse = 0.75 + 0.25 * Math.sin(now * 4 + f.id);
-          const halo = ctx.createRadialGradient(0, 0, bodyH * 0.2, 0, 0, Math.max(bodyLen * 0.95, bodyH * 1.2));
-          halo.addColorStop(0, `rgba(255,255,220,${0.30 + 0.25 * pulse})`);
+          const halo = ctx.createRadialGradient(0, 0, bodyH * 0.25, 0, 0, Math.max(bodyLen * 0.9, bodyH * 1.0));
+          halo.addColorStop(0, `rgba(255,255,220,${0.15 + 0.15 * pulse})`); // 亮度减弱（原来 0.30+0.25）
           halo.addColorStop(1, "rgba(255,255,220,0.00)");
           ctx.fillStyle = halo;
           ctx.beginPath();
-          ctx.ellipse(0, 0, bodyLen * (1.00 + 0.06 * pulse), bodyH * (1.00 + 0.10 * pulse), 0, 0, Math.PI * 2);
+          ctx.ellipse(0, 0, bodyLen * (1.00 + 0.04 * pulse), bodyH * (1.00 + 0.06 * pulse), 0, 0, Math.PI * 2);
           ctx.fill();
           ctx.restore();
 
-          // 高亮描边（更粗更亮，带阴影）
+          // 高亮描边（弱化）
           ctx.save();
           ctx.globalCompositeOperation = "lighter";
-          ctx.shadowBlur = Math.max(14, base * 1.8);
-          ctx.shadowColor = "rgba(255,255,190,0.95)";
-          ctx.globalAlpha = 0.95;
-          ctx.lineWidth = Math.max(2.4, base * 0.18);
-          ctx.strokeStyle = "rgba(255,255,235,0.95)";
-          ctx.beginPath(); beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen * 1.03, bodyH * 1.03);
+          ctx.shadowBlur = Math.max(8, base * 1.2); // 阴影模糊更小（原来 14）
+          ctx.shadowColor = "rgba(255,255,190,0.6)"; // 更淡的光
+          ctx.globalAlpha = 0.6; // 整体透明度减弱（原来 0.95）
+          ctx.lineWidth = Math.max(1.5, base * 0.12); // 线条更细（原来 2.4）
+          ctx.strokeStyle = "rgba(255,255,235,0.6)"; // 描边更淡
+          ctx.beginPath(); 
+          beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen * 1.02, bodyH * 1.02); // 略缩小
           ctx.stroke();
           ctx.restore();
         }
