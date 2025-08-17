@@ -722,6 +722,11 @@ export default function App(){
   const panningRef = useRef(false);
   const panStartRef = useRef<{sx:number;sy:number;camX:number;camY:number}>({sx:0,sy:0,camX:0,camY:0});
   const spaceDownRef = useRef(false);
+  // 触摸缩放（双指捏合）
+  const activePointersRef = useRef<Map<number,{sx:number;sy:number}>>(new Map());
+  const pinchingRef = useRef(false);
+  const pinchLastDistRef = useRef<number|null>(null);
+  const suppressTapRef = useRef(false);
 
   // 编辑器面板状态
   const [designerOpen, setDesignerOpen] = useState(false);
@@ -1110,18 +1115,50 @@ function toCloudPayload(): CloudSave {
   function onPointerDown(e:React.PointerEvent<HTMLCanvasElement>){
     const rect=(e.target as HTMLCanvasElement).getBoundingClientRect();
     const sx=e.clientX-rect.left, sy=e.clientY-rect.top;
+    // 记录指针
+    activePointersRef.current.set(e.pointerId,{sx,sy});
     // 右键/中键或空格：拖拽
     if(e.button===1 || e.button===2 || spaceDownRef.current){
       panningRef.current=true; panStartRef.current={sx,sy,camX:camRef.current.x,camY:camRef.current.y};
       (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId); e.preventDefault(); return;
     }
+    // 双指开始：进入捏合缩放模式
+    if(activePointersRef.current.size>=2){
+      const pts=[...activePointersRef.current.values()];
+      const dx=pts[0].sx-pts[1].sx, dy=pts[0].sy-pts[1].sy;
+      pinchLastDistRef.current=Math.hypot(dx,dy);
+      pinchingRef.current=true;
+      suppressTapRef.current=true;
+      (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
     panStartRef.current={sx,sy,camX:camRef.current.x,camY:camRef.current.y};
     (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
   }
   function onPointerMove(e:React.PointerEvent<HTMLCanvasElement>){
-    if(!(panningRef.current || spaceDownRef.current)) return;
     const rect=(e.target as HTMLCanvasElement).getBoundingClientRect();
     const sx=e.clientX-rect.left, sy=e.clientY-rect.top;
+    // 更新指针位置
+    if(activePointersRef.current.has(e.pointerId)){
+      activePointersRef.current.set(e.pointerId,{sx,sy});
+    }
+    // 处理捏合缩放
+    if(pinchingRef.current && activePointersRef.current.size>=2){
+      const pts=[...activePointersRef.current.values()];
+      const cx=(pts[0].sx+pts[1].sx)/2, cy=(pts[0].sy+pts[1].sy)/2;
+      const dx=pts[0].sx-pts[1].sx, dy=pts[0].sy-pts[1].sy;
+      const dist=Math.hypot(dx,dy);
+      const last=pinchLastDistRef.current||dist;
+      const factor=dist/(last||1);
+      if(factor>0 && Number.isFinite(factor)){
+        zoomAt(cx,cy,factor);
+      }
+      pinchLastDistRef.current=dist;
+      e.preventDefault();
+      return;
+    }
+    if(!(panningRef.current || spaceDownRef.current)) return;
     const cam=camRef.current; const start=panStartRef.current;
     const dx=(sx-start.sx)/cam.scale, dy=(sy-start.sy)/cam.scale;
     cam.x = start.camX - dx; cam.y = start.camY - dy; ensureCamInBounds(); e.preventDefault();
@@ -1129,6 +1166,21 @@ function toCloudPayload(): CloudSave {
   function onPointerUp(e:React.PointerEvent<HTMLCanvasElement>){
     const rect=(e.target as HTMLCanvasElement).getBoundingClientRect();
     const sx=e.clientX-rect.left, sy=e.clientY-rect.top;
+    // 清理指针
+    activePointersRef.current.delete(e.pointerId);
+    if(pinchingRef.current){
+      if(activePointersRef.current.size<2){
+        pinchingRef.current=false; pinchLastDistRef.current=null;
+      }
+      (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId);
+      return; // 捏合结束，不投喂
+    }
+    // 若此前发生过捏合，则本轮所有触点结束前都不触发投喂
+    if(suppressTapRef.current){
+      if(activePointersRef.current.size===0){ suppressTapRef.current=false; }
+      (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId);
+      return;
+    }
     if(panningRef.current || spaceDownRef.current || e.button===1 || e.button===2){
       panningRef.current=false; (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId); return;
     }
@@ -1141,6 +1193,14 @@ function toCloudPayload(): CloudSave {
     saveLocalRev(pondId);
     saveCloudNow();
     (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId);
+  }
+  function onPointerCancel(e:React.PointerEvent<HTMLCanvasElement>){
+    activePointersRef.current.delete(e.pointerId);
+    panningRef.current=false;
+    if(pinchingRef.current && activePointersRef.current.size<2){
+      pinchingRef.current=false; pinchLastDistRef.current=null;
+    }
+    if(activePointersRef.current.size===0){ suppressTapRef.current=false; }
   }
   function onWheel(e:React.WheelEvent<HTMLCanvasElement>){
     const rect=(e.target as HTMLCanvasElement).getBoundingClientRect();
@@ -1433,6 +1493,7 @@ function toCloudPayload(): CloudSave {
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
           onWheel={onWheel}
           onContextMenu={onContextMenu}
         />
