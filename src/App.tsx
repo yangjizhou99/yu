@@ -13,6 +13,7 @@ import {
   putTextureIfAbsent,
   getTextureDataUrl
 } from "./firebase";
+import { useI18n } from "./i18n";
 
 // —— Fish Pond Mini-Game ————————————————————————————
 // S4.1：相机(缩放/拖拽) + 巨型鱼塘(4096x2304) + 降速成长 + 🎨自定义绘鱼 + 持久化 v3
@@ -684,6 +685,7 @@ function drawOceanBackground(ctx: CanvasRenderingContext2D, now: number) {
 }
 
 export default function App(){
+  const { t, lang, setLang } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement|null>(null);
   const containerRef = useRef<HTMLDivElement|null>(null);
   const [fishCount, setFishCount] = useState(0);
@@ -1416,24 +1418,23 @@ function toCloudPayload(): CloudSave {
   return (
     <div className="w-full max-w-5xl mx-auto pb-[env(safe-area-inset-bottom,0px)]">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 mb-3">
-        <h2 className="text-xl font-semibold">🐟 小鱼塘 Mini-Game</h2>
+        <h2 className="text-xl font-semibold">{t("title.miniGame")}</h2>
         <div className="flex flex-wrap items-center gap-2">
           {/* 视角控制 */}
           <button onClick={zoomOutCenter} className="px-2 py-1 rounded-2xl bg-slate-200 hover:bg-slate-300">➖</button>
           <button onClick={zoomInCenter} className="px-2 py-1 rounded-2xl bg-slate-200 hover:bg-slate-300">➕</button>
-          <button onClick={resetView} className="px-2 py-1 rounded-2xl bg-slate-200 hover:bg-slate-300">⟳ 重置</button>
-          <button onClick={fitAll} className="px-2 py-1 rounded-2xl bg-slate-200 hover:bg-slate-300">⤢ 全景</button>
+          <button onClick={resetView} className="px-2 py-1 rounded-2xl bg-slate-200 hover:bg-slate-300">⟳ {t("btn.zoom.reset")}</button>
+          <button onClick={fitAll} className="px-2 py-1 rounded-2xl bg-slate-200 hover:bg-slate-300">⤢ {t("btn.zoom.fitAll")}</button>
 
           <button onClick={addFish} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
-            bg-sky-500 text-white hover:bg-sky-600 active:scale-[0.98]">+1 条鱼</button>
+            bg-sky-500 text-white hover:bg-sky-600 active:scale-[0.98]">{t("btn.addFish")}</button>
           
           <div className="relative">
             <button
               onClick={() => setShowTexPicker(v => !v)}
-              className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
-            bg-indigo-500 text-white hover:bg-indigo-600"
-              title="从贴图库添加海洋生物皮肤"
-            >🖼 贴图海生物</button>
+              className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm bg-indigo-500 text-white hover:bg-indigo-600"
+              title={t("texPicker.title")}
+            >{t("btn.openTexPicker")}</button>
 
             {showTexPicker && (
               <div className="absolute right-0 mt-2 w-[360px] p-2 bg-white rounded-xl shadow-lg border grid grid-cols-3 gap-2 z-50">
@@ -1450,30 +1451,42 @@ function toCloudPayload(): CloudSave {
           </div>
 
           <button onClick={openDesigner} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
-            bg-violet-500 text-white hover:bg-violet-600 active:scale-[0.98]">🎨 自定义新鱼</button>
+            bg-violet-500 text-white hover:bg-violet-600 active:scale-[0.98]">{t("btn.openDesigner")}</button>
           <button onClick={openOutlineEditor} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
-            bg-emerald-500 text-white hover:bg-emerald-600 active:scale-[0.98]">🎯 创建新鱼形（两步）</button>
-          <button onClick={()=>{ fishRef.current=[]; setFishCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-slate-200 hover:bg-slate-300">清空鱼</button>
-          <button onClick={()=>{ foodRef.current=[]; setFoodCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-amber-200 hover:bg-amber-300">清空饲料</button>
+            bg-emerald-500 text-white hover:bg-emerald-600 active:scale-[0.98]">{t("btn.openOutlineEditor")}</button>
+          <button onClick={()=>{ fishRef.current=[]; setFishCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-slate-200 hover:bg-slate-300">{t("btn.clearFish")}</button>
+          <button onClick={()=>{ foodRef.current=[]; setFoodCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-amber-200 hover:bg-amber-300">{t("btn.clearFood")}</button>
           <button
             onClick={() => {
               const base = (import.meta as any).env.BASE_URL || "/";
               const url = `${location.origin}${base}?pond=${pondId}`;
-              navigator.clipboard.writeText(url).then(() => alert("分享链接已复制到剪贴板"));
+              navigator.clipboard.writeText(url).then(() => alert(t("share.copied")));
             }}
             className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
             bg-emerald-500 text-white hover:bg-emerald-600"
-            title="复制当前池塘的分享链接"
-          >🔗 分享这个池塘</button>
+            title={t("share.title")}
+          >{t("btn.share")}</button>
 
-          <button onClick={clearSaveAndReset} className="px-3 py-1.5 rounded-2xl bg-rose-200 hover:bg-rose-300">清空存档</button>
+          <button onClick={clearSaveAndReset} className="px-3 py-1.5 rounded-2xl bg-rose-200 hover:bg-rose-300">{t("btn.clearSave")}</button>
+
+          <div className="flex items-center gap-1 ml-2">
+            <span className="text-sm text-slate-600">{t("lang.label")}:</span>
+            <select
+              className="px-2 py-1 rounded-lg border bg-white"
+              value={lang}
+              onChange={e=>setLang(e.target.value as any)}
+            >
+              <option value="zh">{t("lang.zh")}</option>
+              <option value="ja">{t("lang.ja")}</option>
+            </select>
+          </div>
         </div>
       </div>
 
       <div className="text-sm text-slate-600 mb-2">
-        滚轮缩放，按住<strong>空格</strong>或<strong>右键/中键</strong>拖拽视角；Alt+V 显示视野圈。
-        <span className="ml-2">鱼：{fishCount}</span>
-        <span className="ml-3">饲料：{foodCount}</span>
+        {t("hint.controls")}
+        <span className="ml-2">{t("label.fish")}{fishCount}</span>
+        <span className="ml-3">{t("label.food")}{foodCount}</span>
       </div>
 
       <div
@@ -1638,14 +1651,14 @@ function toCloudPayload(): CloudSave {
       {/* === 鱼类体积排行榜 === */}
       <div className="w-full max-w-5xl mx-auto mt-2 mb-4 px-2">
         <div className="bg-white/80 rounded-xl shadow border p-2 text-sm overflow-x-auto">
-          <div className="font-semibold mb-1">🐟 鱼类体积排行榜（仅显示有主人的鱼）</div>
+          <div className="font-semibold mb-1">{t("ranking.title")}</div>
           <table className="w-full text-left">
             <thead>
               <tr className="text-slate-500 border-b">
-                <th className="py-1 pr-2">排名</th>
-                <th className="py-1 pr-2">主人</th>
-                <th className="py-1 pr-2">体积</th>
-                <th className="py-1 pr-2">昵称</th>
+                <th className="py-1 pr-2">{t("ranking.th.rank")}</th>
+                <th className="py-1 pr-2">{t("ranking.th.owner")}</th>
+                <th className="py-1 pr-2">{t("ranking.th.volume")}</th>
+                <th className="py-1 pr-2">{t("ranking.th.nick")}</th>
               </tr>
             </thead>
             <tbody>
@@ -1662,7 +1675,7 @@ function toCloudPayload(): CloudSave {
                   </tr>
                 ))}
               {fishRef.current.filter(f => f.ownerName && f.ownerName.trim()).length === 0 && (
-                <tr><td colSpan={4} className="text-center text-slate-400 py-2">暂无有主人的鱼</td></tr>
+                <tr><td colSpan={4} className="text-center text-slate-400 py-2">{t("ranking.none")}</td></tr>
               )}
             </tbody>
           </table>

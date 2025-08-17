@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
+import { useI18n } from "../i18n";
 import { UserOutline, UserFishSVG, pointsToOpenPathD, uuid, saveSvgLib, loadSvgLib } from "../types/fish";
 
 interface DetailEditorProps {
@@ -8,6 +9,7 @@ interface DetailEditorProps {
 }
 
 export default function DetailEditor({ outline, onSave, onBack }: DetailEditorProps) {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [strokes, setStrokes] = useState<Array<{color: string, width: number, pts: Array<{x: number, y: number}>}>>([]);
   const [currentStroke, setCurrentStroke] = useState<{color: string, width: number, pts: Array<{x: number, y: number}>} | null>(null);
@@ -152,7 +154,7 @@ export default function DetailEditor({ outline, onSave, onBack }: DetailEditorPr
 
   const handleSave = async () => {
     if (!name.trim()) {
-      alert("请输入SVG名称");
+      alert(t("alert.enterSvgName"));
       return;
     }
 
@@ -210,16 +212,16 @@ export default function DetailEditor({ outline, onSave, onBack }: DetailEditorPr
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className="w-full max-w-2xl bg-white rounded-2xl shadow-xl p-6">
-        <h3 className="text-xl font-semibold mb-4">绘制鱼形细节</h3>
+        <h3 className="text-xl font-semibold mb-4">{t("detail.title")}</h3>
         
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">SVG名称</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">{t("detail.name")}</label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="w-full px-3 py-2 border rounded-lg"
-            placeholder="例如：蓝色花纹神仙鱼"
+            placeholder={t("detail.name.ph")}
           />
         </div>
 
@@ -233,7 +235,7 @@ export default function DetailEditor({ outline, onSave, onBack }: DetailEditorPr
             style={{ height: outline.viewBox.h }}
           />
           <div className="absolute top-2 left-2 bg-white/80 px-2 py-1 rounded text-sm">
-            在轮廓内绘制细节
+            {t("detail.hint")}
           </div>
         </div>
 
@@ -251,10 +253,10 @@ export default function DetailEditor({ outline, onSave, onBack }: DetailEditorPr
             onClick={() => setIsEraser(!isEraser)}
             className={`px-3 py-2 rounded-lg border ${isEraser ? "bg-gray-700 text-white" : "bg-white"}`}
           >
-            橡皮
+            {t("btn.eraser")}
           </button>
           <label className="flex items-center gap-2">
-            <span className="text-sm">粗细</span>
+            <span className="text-sm">{t("label.thickness")}</span>
             <input
               type="range"
               min={2}
@@ -268,14 +270,14 @@ export default function DetailEditor({ outline, onSave, onBack }: DetailEditorPr
             disabled={strokes.length === 0}
             className="px-3 py-2 bg-gray-200 rounded-lg disabled:opacity-50"
           >
-            撤销
+            {t("btn.undo")}
           </button>
           <button
             onClick={handleClear}
             disabled={strokes.length === 0}
             className="px-3 py-2 bg-gray-200 rounded-lg disabled:opacity-50"
           >
-            清空
+            {t("btn.clear")}
           </button>
         </div>
 
@@ -284,14 +286,14 @@ export default function DetailEditor({ outline, onSave, onBack }: DetailEditorPr
             onClick={onBack}
             className="px-4 py-2 border rounded-lg"
           >
-            返回修改轮廓
+            {t("btn.backToOutline")}
           </button>
           <button
             onClick={handleSave}
             disabled={!name.trim() || strokes.length === 0}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50"
           >
-            保存为SVG
+            {t("btn.saveSvg")}
           </button>
         </div>
       </div>
