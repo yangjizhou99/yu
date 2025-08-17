@@ -1612,41 +1612,44 @@ function toCloudPayload(): CloudSave {
             </button>
           </div>
 
-          {showDevButtons && (
-            <>
-              <button onClick={addFish} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
-                bg-sky-500 text-white hover:bg-sky-600 active:scale-[0.98]">{t("btn.addFish")}</button>
-              
-              <div className="relative">
-                <button
-                  onClick={() => setShowTexPicker(v => !v)}
-                  className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm bg-indigo-500 text-white hover:bg-indigo-600"
-                  title={t("texPicker.title")}
-                >{t("btn.openTexPicker")}</button>
+                          {/* 自定义新鱼按钮 - 始终可见 */}
+                <button onClick={openDesigner} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
+                  bg-violet-500 text-white hover:bg-violet-600 active:scale-[0.98]">{t("btn.openDesigner")}</button>
 
-                {showTexPicker && (
-                  <div className="absolute right-0 mt-2 w-[360px] p-2 bg-white rounded-xl shadow-lg border grid grid-cols-3 gap-2 z-50">
-                    {TEXTURE_PACK.map(t => (
-                      <button key={t.key}
-                        onClick={() => { addFishFromDef(t); setShowTexPicker(false); }}
-                        className="group rounded-lg border hover:shadow-sm overflow-hidden text-xs">
-                        <img src={t.preview} alt={t.label} className="w-full h-[60px] object-cover" />
-                        <div className="px-2 py-1 text-center">{t.label}</div>
-                      </button>
-                    ))}
-                  </div>
+                {/* 开发者模式按钮 - 需要密码 */}
+                {showDevButtons && (
+                  <>
+                    <button onClick={addFish} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
+                      bg-sky-500 text-white hover:bg-sky-600 active:scale-[0.98]">{t("btn.addFish")}</button>
+
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowTexPicker(v => !v)}
+                        className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm bg-indigo-500 text-white hover:bg-indigo-600"
+                        title={t("texPicker.title")}
+                      >{t("btn.openTexPicker")}</button>
+
+                      {showTexPicker && (
+                        <div className="absolute right-0 mt-2 w-[360px] p-2 bg-white rounded-xl shadow-lg border grid grid-cols-3 gap-2 z-50">
+                          {TEXTURE_PACK.map(t => (
+                            <button key={t.key}
+                              onClick={() => { addFishFromDef(t); setShowTexPicker(false); }}
+                              className="group rounded-lg border hover:shadow-sm overflow-hidden text-xs">
+                              <img src={t.preview} alt={t.label} className="w-full h-[60px] object-cover" />
+                              <div className="px-2 py-1 text-center">{t.label}</div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <button onClick={openOutlineEditor} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
+                      bg-emerald-500 text-white hover:bg-emerald-600 active:scale-[0.98]">{t("btn.openOutlineEditor")}</button>
+                    <button onClick={()=>{ fishRef.current=[]; setFishCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-slate-200 hover:bg-slate-300">{t("btn.clearFish")}</button>
+                    <button onClick={()=>{ foodRef.current=[]; setFoodCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-amber-200 hover:bg-amber-300">{t("btn.clearFood")}</button>
+                    <button onClick={clearSaveAndReset} className="px-3 py-1.5 rounded-2xl bg-rose-200 hover:bg-rose-300">{t("btn.clearSave")}</button>
+                  </>
                 )}
-              </div>
-
-              <button onClick={openDesigner} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
-                bg-violet-500 text-white hover:bg-violet-600 active:scale-[0.98]">{t("btn.openDesigner")}</button>
-              <button onClick={openOutlineEditor} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
-                bg-emerald-500 text-white hover:bg-emerald-600 active:scale-[0.98]">{t("btn.openOutlineEditor")}</button>
-              <button onClick={()=>{ fishRef.current=[]; setFishCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-slate-200 hover:bg-slate-300">{t("btn.clearFish")}</button>
-              <button onClick={()=>{ foodRef.current=[]; setFoodCount(0); scheduleSave(); localRevRef.current += 1; saveLocalRev(pondId); saveCloudNow(); }} className="px-3 py-1.5 rounded-2xl bg-amber-200 hover:bg-amber-300">{t("btn.clearFood")}</button>
-              <button onClick={clearSaveAndReset} className="px-3 py-1.5 rounded-2xl bg-rose-200 hover:bg-rose-300">{t("btn.clearSave")}</button>
-            </>
-          )}
 
           <button
             onClick={() => {
