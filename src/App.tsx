@@ -692,6 +692,8 @@ export default function App(){
   const fishRef = useRef<Fish[]>([]);
   const foodRef = useRef<Food[]>([]);
   const nextIdRef = useRef(1);
+  // 统一的 DPR：在 resizeCanvas 中裁剪并记录，渲染时也使用它，避免高 DPR 设备上坐标映射偏差
+  const dprRef = useRef(1);
 
   // === S6.2C: 版本号持久化 ===
   const localRevRef = useRef(0);
@@ -887,6 +889,7 @@ function toCloudPayload(): CloudSave {
     const rawDpr = window.devicePixelRatio || 1;
     const MAX_DPR = 2.2;                 // 性能上限，避免 3x/4x 过重
     const dpr = Math.min(rawDpr, MAX_DPR);
+    dprRef.current = dpr;
 
     const cssW = Math.max(320, Math.floor(rect.width));
     const cssH = Math.max(220, Math.floor(rect.height));
@@ -1160,7 +1163,7 @@ function toCloudPayload(): CloudSave {
       const now=t/1000; const last=lastTimeRef.current??now; const dt=clamp(now-last,0,0.05); lastTimeRef.current=now;
 
       // 相机 + DPR
-      const dpr=window.devicePixelRatio||1; const cam=camRef.current;
+      const dpr=dprRef.current; const cam=camRef.current;
       ctx.setTransform(dpr*cam.scale,0,0,dpr*cam.scale, -cam.x*dpr*cam.scale, -cam.y*dpr*cam.scale);
 
       // 背景：海洋风格（替代原先的浅蓝背景 + 水纹）
