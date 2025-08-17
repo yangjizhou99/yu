@@ -19,8 +19,8 @@ import { useI18n } from "./i18n";
 // S4.1：相机(缩放/拖拽) + 巨型鱼塘(4096x2304) + 降速成长 + 🎨自定义绘鱼 + 持久化 v3
 
 // ====== 世界/相机参数 ======
-const WORLD_W = 4096;
-const WORLD_H = 2304;
+const WORLD_W = 2048;
+const WORLD_H = 1152;
 const SCALE_MIN = 0.3;
 const SCALE_MAX = 3.0;
 const ZOOM_STEP = 1.15; // 按钮缩放步长
