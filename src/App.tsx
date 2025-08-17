@@ -729,6 +729,8 @@ export default function App(){
   const pinchingRef = useRef(false);
   const pinchLastDistRef = useRef<number|null>(null);
   const suppressTapRef = useRef(false);
+  // 触摸单指滑动视角（延迟开启：移动超过阈值才认定为拖拽）
+  const touchMaybePanRef = useRef<{active:boolean; id:number; startSX:number; startSY:number}|null>(null);
 
   // 编辑器面板状态
   const [designerOpen, setDesignerOpen] = useState(false);
@@ -1131,9 +1133,15 @@ function toCloudPayload(): CloudSave {
       pinchLastDistRef.current=Math.hypot(dx,dy);
       pinchingRef.current=true;
       suppressTapRef.current=true;
+      // 发生捏合时取消单指拖拽
+      panningRef.current=false; touchMaybePanRef.current=null;
       (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
       e.preventDefault();
       return;
+    }
+    // 触摸端：单指先标记为“可能拖拽”，超过阈值才真正开始拖拽
+    if(e.pointerType==="touch"){
+      touchMaybePanRef.current={active:true,id:e.pointerId,startSX:sx,startSY:sy};
     }
     panStartRef.current={sx,sy,camX:camRef.current.x,camY:camRef.current.y};
     (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
@@ -1160,6 +1168,14 @@ function toCloudPayload(): CloudSave {
       e.preventDefault();
       return;
     }
+    // 触摸：如果是“可能拖拽”，当移动超过阈值（像素）则启动拖拽
+    if(e.pointerType==="touch" && touchMaybePanRef.current?.active && touchMaybePanRef.current.id===e.pointerId && !panningRef.current){
+      const dx=sx-touchMaybePanRef.current.startSX; const dy=sy-touchMaybePanRef.current.startSY;
+      const MOVE_THRESHOLD=6;
+      if(Math.hypot(dx,dy)>MOVE_THRESHOLD){
+        panningRef.current=true; // 开始拖拽
+      }
+    }
     if(!(panningRef.current || spaceDownRef.current)) return;
     const cam=camRef.current; const start=panStartRef.current;
     const dx=(sx-start.sx)/cam.scale, dy=(sy-start.sy)/cam.scale;
@@ -1183,6 +1199,12 @@ function toCloudPayload(): CloudSave {
       (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId);
       return;
     }
+    // 正在拖拽：结束拖拽
+    if(panningRef.current){
+      panningRef.current=false; touchMaybePanRef.current=null;
+      (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId);
+      return;
+    }
     if(panningRef.current || spaceDownRef.current || e.button===1 || e.button===2){
       panningRef.current=false; (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId); return;
     }
@@ -1194,6 +1216,7 @@ function toCloudPayload(): CloudSave {
     localRevRef.current += 1;
     saveLocalRev(pondId);
     saveCloudNow();
+    touchMaybePanRef.current=null;
     (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId);
   }
   function onPointerCancel(e:React.PointerEvent<HTMLCanvasElement>){
@@ -1203,6 +1226,7 @@ function toCloudPayload(): CloudSave {
       pinchingRef.current=false; pinchLastDistRef.current=null;
     }
     if(activePointersRef.current.size===0){ suppressTapRef.current=false; }
+    touchMaybePanRef.current=null;
   }
   function onWheel(e:React.WheelEvent<HTMLCanvasElement>){
     const rect=(e.target as HTMLCanvasElement).getBoundingClientRect();
@@ -1223,6 +1247,10 @@ function toCloudPayload(): CloudSave {
     const step=(t:number)=>{
       ctx.globalAlpha=1; ctx.globalCompositeOperation="source-over";
       const now=t/1000; const last=lastTimeRef.current??now; const dt=clamp(now-last,0,0.05); lastTimeRef.current=now;
+
+      // 先清屏（用单位矩阵清除整个像素画布，避免缩放时世界边界外区域残留拖影）
+      ctx.setTransform(1,0,0,1,0,0);
+      ctx.clearRect(0,0,cvs.width,cvs.height);
 
       // 相机 + DPR
       const dpr=dprRef.current; const cam=camRef.current;
