@@ -624,7 +624,15 @@ function drawBubbleColumn(ctx: CanvasRenderingContext2D, b: BubbleCol, seabedTop
   }
 }
 
-function drawOceanBackground(ctx: CanvasRenderingContext2D, now: number) {
+type ViewRect = { x: number; y: number; w: number; h: number };
+function rectIntersects(a:ViewRect, bx:number, by:number, bw:number, bh:number, margin=0){
+  return !(bx+bw < a.x-margin || by+bh < a.y-margin || bx > a.x+a.w+margin || by > a.y+a.h+margin);
+}
+function circleIntersects(a:ViewRect, cx:number, cy:number, r:number, margin=0){
+  return rectIntersects(a, cx-r, cy-r, r*2, r*2, margin);
+}
+
+function drawOceanBackground(ctx: CanvasRenderingContext2D, now: number, view: ViewRect) {
   initOceanDecor();
   // 1) 深海渐变
   const grd = ctx.createLinearGradient(0, 0, 0, WORLD_H);
@@ -632,17 +640,20 @@ function drawOceanBackground(ctx: CanvasRenderingContext2D, now: number) {
   grd.addColorStop(0.55, "#0a6aa1"); // 深蓝
   grd.addColorStop(1.00, "#06304f"); // 海底
   ctx.fillStyle = grd;
-  ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+  // 仅填充可见视口区域，避免全屏填充造成的额外开销
+  ctx.fillRect(view.x, view.y, view.w, view.h);
 
   // 2) 顶部光斑
   ctx.save();
   ctx.globalAlpha = 0.12;
   for (let i = 0; i < 5; i++) {
     const y = ((now * 18 + i * 180) % (WORLD_H + 220)) - 220;
-    ctx.beginPath();
-    ctx.ellipse(WORLD_W * 0.5, y, WORLD_W * 0.60, 26, 0, 0, Math.PI * 2);
-    ctx.fillStyle = "#ffffff";
-    ctx.fill();
+    if (y+30 >= view.y && y-30 <= view.y+view.h) {
+      ctx.beginPath();
+      ctx.ellipse(WORLD_W * 0.5, y, WORLD_W * 0.60, 26, 0, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+    }
   }
   ctx.restore();
 
@@ -660,27 +671,45 @@ function drawOceanBackground(ctx: CanvasRenderingContext2D, now: number) {
   sand.addColorStop(0, "#f1e2a9");
   sand.addColorStop(1, "#d8c17a");
   ctx.fillStyle = sand;
-  ctx.fillRect(0, seabedTop, WORLD_W, WORLD_H - seabedTop);
+  const sandY = Math.max(seabedTop, view.y), sandH = Math.max(0, Math.min(WORLD_H, view.y+view.h) - sandY);
+  if (sandH > 0) ctx.fillRect(view.x, sandY, view.w, sandH);
 
   // 5) 沙丘
   ctx.globalAlpha = 0.25;
   for (let i = 0; i < 3; i++) {
     const y0 = seabedTop + 40 + i * 30;
-    ctx.beginPath();
-    ctx.ellipse(WORLD_W * (0.2 + i * 0.3), y0, 220 + i * 120, 18, 0, 0, Math.PI * 2);
-    ctx.fillStyle = "#c8b06a";
-    ctx.fill();
+    const rx = 220 + i * 120, ry = 18, cx = WORLD_W * (0.2 + i * 0.3);
+    if (rectIntersects(view, cx-rx, y0-ry, rx*2, ry*2, 20)) {
+      ctx.beginPath();
+      ctx.ellipse(cx, y0, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fillStyle = "#c8b06a";
+      ctx.fill();
+    }
   }
   ctx.globalAlpha = 1;
 
   // 6) 岩石、珊瑚、贝壳、海草、气泡、螃蟹（底部）
   if (decorRef.current) {
-    for (const r of decorRef.current.rocks) drawRock(ctx, r);
-    for (const c of decorRef.current.corals) drawCoral(ctx, c, now);
-    for (const s of decorRef.current.shells) drawShell(ctx, s);
-    for (const k of decorRef.current.kelp) drawKelp(ctx, k, seabedTop, now);
-    for (const b of decorRef.current.bubbles) drawBubbleColumn(ctx, b, seabedTop, now);
-    for (const cb of decorRef.current.crabs) drawCrabMob(ctx, cb, now);
+    // 可见性裁剪：只绘制视口附近的元素
+    for (const r of decorRef.current.rocks) {
+      if (rectIntersects(view, r.x - r.w*0.5, r.y - r.h*0.5, r.w, r.h, 40)) drawRock(ctx, r);
+    }
+    for (const c of decorRef.current.corals) {
+      if (rectIntersects(view, c.x - c.size*0.6, c.y - c.size*0.8, c.size*1.2, c.size*1.6, 60)) drawCoral(ctx, c, now);
+    }
+    for (const s of decorRef.current.shells) {
+      if (circleIntersects(view, s.x, s.y, s.size*1.2, 30)) drawShell(ctx, s);
+    }
+    for (const k of decorRef.current.kelp) {
+      // 以海草高度作为包围盒
+      if (rectIntersects(view, k.x-20, seabedTop - k.height - 10, 40, k.height + 30, 80)) drawKelp(ctx, k, seabedTop, now);
+    }
+    for (const b of decorRef.current.bubbles) {
+      if (rectIntersects(view, b.x-10, 0, 20, WORLD_H, 0)) drawBubbleColumn(ctx, b, seabedTop, now);
+    }
+    for (const cb of decorRef.current.crabs) {
+      if (rectIntersects(view, cb.x0 - cb.range - 40, cb.y - 20, (cb.range+40)*2, 40, 100)) drawCrabMob(ctx, cb, now);
+    }
   }
 }
 
@@ -1255,16 +1284,19 @@ function toCloudPayload(): CloudSave {
       // 相机 + DPR
       const dpr=dprRef.current; const cam=camRef.current;
       ctx.setTransform(dpr*cam.scale,0,0,dpr*cam.scale, -cam.x*dpr*cam.scale, -cam.y*dpr*cam.scale);
+      const {cssW, cssH} = getCssSize();
+      const view: ViewRect = { x: cam.x, y: cam.y, w: cssW/cam.scale, h: cssH/cam.scale };
 
       // 背景：海洋风格（替代原先的浅蓝背景 + 水纹）
-      drawOceanBackground(ctx, now);
+      drawOceanBackground(ctx, now, view);
 
-      // 饲料
-      for(const fd of foodRef.current) drawFood(ctx,fd,now);
+      // 饲料（视口裁剪）
+      for(const fd of foodRef.current){ if (circleIntersects(view, fd.x, fd.y, fd.r+14, 40)) drawFood(ctx,fd,now); }
 
       // 更新鱼
       const foods=foodRef.current; let ate=false;
       for(const f of fishRef.current){
+        // 更新完再做可见性判断以绘制
         let target:Food|null=null, dMin=Infinity;
         for(const fd of foods){ const d=dist(f.x,f.y,fd.x,fd.y); if(d<f.vision && d<dMin){dMin=d; target=fd;} }
         let dvx=f.vx, dvy=f.vy;
@@ -1300,8 +1332,9 @@ function toCloudPayload(): CloudSave {
       }
       setFoodCount(foods.length);
 
-      // 绘制鱼
+      // 绘制鱼（视口裁剪）
       for(const f of fishRef.current){
+        if (!circleIntersects(view, f.x, f.y, BASE_FISH_SIZE*f.sizeScale*2.2, 40)) continue;
         const angle=Math.atan2(f.vy,f.vx); const base=BASE_FISH_SIZE*f.sizeScale;
         const { path, box, flipX } = getOutlinePathForFish(f);
         const bodyLen=base*1.6, bodyH=base*0.9; const tailWobble=Math.sin((now+f.id)*8)*(base*0.22);
@@ -1325,7 +1358,9 @@ function toCloudPayload(): CloudSave {
           ctx.clip();
           
           // 泳动微波效果（可选）
-          const strips = 28;
+          // 贴图条带数量自适应，避免在小视口/小体型时过度开销
+          const desiredPx = Math.min(220, Math.max(60, (cssW+cssH)/10));
+          const strips = Math.max(12, Math.floor((bodyLen) / (desiredPx/20)));
           const imgW = img.width, imgH = img.height;
           for (let i = 0; i < strips; i++) {
             const sx = Math.floor((i / strips) * imgW);
