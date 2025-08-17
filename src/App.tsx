@@ -1403,7 +1403,7 @@ function toCloudPayload(): CloudSave {
         // 内暗沿边
         ctx.save();
         ctx.globalCompositeOperation = "source-atop";
-        ctx.lineWidth = 1.6;
+        ctx.lineWidth = 1.8;
         ctx.strokeStyle = "rgba(0,0,0,0.12)";
         ctx.beginPath(); beginFishBodyPath_byShape(ctx, f.shape ?? "angelfish", bodyLen*0.985, bodyH*0.985);
         ctx.stroke();
@@ -1764,9 +1764,9 @@ function FishDesigner({ onCancel, onCreate }: {
   const shapeRef = useRef<FishShape>("angelfish");
   useEffect(() => { shapeRef.current = shape; }, [shape]);
 
-  const CSS_W = Math.floor(Math.min(520, Math.max(280, window.innerWidth * 0.9)));
-  const CSS_H = Math.floor(CSS_W * 0.56); // 稍横向比例，给鱼身空间
-  const fishFrame = { cx: CSS_W*0.5, cy: CSS_H*0.5, L: CSS_W*0.68, H: CSS_H*0.60 };
+  const CSS_W = Math.floor(Math.min(800, Math.max(580, window.innerWidth * 0.9)));
+  const CSS_H = Math.floor(CSS_W * 0.66); // 稍横向比例，给鱼身空间
+  const fishFrame = { cx: CSS_W*0.5, cy: CSS_H*0.5, L: CSS_W*0.95, H: CSS_H*0.95 };
 
   function setupHiDPICanvas(cvs: HTMLCanvasElement, cssW: number, cssH: number) {
     const dpr = window.devicePixelRatio || 1;
