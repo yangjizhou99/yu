@@ -791,6 +791,22 @@ export default function App(){
   const [showDevButtons, setShowDevButtons] = useState(false);
   const [devPassword, setDevPassword] = useState("");
 
+  // 开发者选项：体型上限（可配置）
+  const [sizeScaleMax, setSizeScaleMax] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("dev-size-scale-max");
+      const parsed = saved != null ? parseFloat(saved) : SIZE_SCALE_MAX;
+      return Number.isFinite(parsed) ? clamp(parsed, 1.0, 10.0) : SIZE_SCALE_MAX;
+    } catch {
+      return SIZE_SCALE_MAX;
+    }
+  });
+  const sizeScaleMaxRef = useRef(sizeScaleMax);
+  useEffect(() => {
+    sizeScaleMaxRef.current = sizeScaleMax;
+    try { localStorage.setItem("dev-size-scale-max", String(sizeScaleMax)); } catch {}
+  }, [sizeScaleMax]);
+
   // 开发者模式密码验证
   const checkDevPassword = () => {
     if (devPassword === "9251") {
@@ -1394,7 +1410,7 @@ function toCloudPayload(): CloudSave {
           if(dist(f.x,f.y,fd.x,fd.y)<=eatR+fd.r){
             foods.splice(i,1);
             const eff = fd.growPct / (1 + (f.sizeScale-1)*0.8);
-            f.sizeScale = Math.min(SIZE_SCALE_MAX, f.sizeScale*(1+eff));
+            f.sizeScale = Math.min(sizeScaleMaxRef.current, f.sizeScale*(1+eff));
             ate=true;
           }
         }
@@ -1622,6 +1638,28 @@ function toCloudPayload(): CloudSave {
                   <>
                     <button onClick={addFish} className="px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-2xl shadow-sm
                       bg-sky-500 text-white hover:bg-sky-600 active:scale-[0.98]">{t("btn.addFish")}</button>
+
+                    {/* 开发者选项：体型上限 */}
+                    <div className="flex items-center gap-2 px-2 py-1 rounded-xl bg-white/70 border">
+                      <span className="text-xs text-slate-600">体型上限</span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={10}
+                        step={0.1}
+                        value={sizeScaleMax}
+                        onChange={(e)=> setSizeScaleMax(parseFloat(e.target.value))}
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        max={10}
+                        step={0.1}
+                        value={sizeScaleMax}
+                        onChange={(e)=> setSizeScaleMax(clamp(parseFloat(e.target.value||"0"), 1, 10))}
+                        className="w-16 px-2 py-1 text-sm rounded-lg border bg-white"
+                      />
+                    </div>
 
                     <div className="relative">
                       <button
